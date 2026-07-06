@@ -1,0 +1,1749 @@
+"use client";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import {
+  Send, Mic, MicOff, Image as ImageIcon, Loader2, Volume2, Square,
+  FileText, Activity, User, Clock, ChevronRight, Plus, X, Trash2,
+  Upload, Heart, AlertTriangle, Shield, Brain, BookOpen,
+  Pill, Download, Globe, Zap, Eye, Stethoscope,
+  Check, Moon, Sun, Search, ChevronDown, Settings,
+  Calendar, ClipboardList, Users, Sparkles, TrendingUp, Target,
+} from "lucide-react";
+
+const API = process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" && window.location.hostname !== "localhost" ? `http://${window.location.hostname}:8000` : "http://localhost:8000");
+
+const BODY_REGIONS = [
+  { id: "head", label: "Head", cx: 150, cy: 30, desc: "Headache, migraine, dizziness" },
+  { id: "eyes", label: "Eyes", cx: 150, cy: 52, desc: "Vision problems, eye pain" },
+  { id: "chest", label: "Chest", cx: 150, cy: 145, desc: "Chest pain, breathing" },
+  { id: "abdomen", label: "Abdomen", cx: 150, cy: 200, desc: "Stomach pain, digestion" },
+  { id: "left_arm", label: "Left Arm", cx: 85, cy: 175, desc: "Arm pain, numbness" },
+  { id: "right_arm", label: "Right Arm", cx: 215, cy: 175, desc: "Arm pain, numbness" },
+  { id: "lower_back", label: "Lower Back", cx: 200, cy: 210, desc: "Lower back pain" },
+  { id: "left_leg", label: "Left Leg", cx: 130, cy: 320, desc: "Leg pain, swelling" },
+  { id: "right_leg", label: "Right Leg", cx: 170, cy: 320, desc: "Leg pain, swelling" },
+  { id: "skin", label: "Skin", cx: 240, cy: 260, desc: "Rashes, lesions" },
+];
+
+const VOICE_LANGUAGES = [
+  { code: null, label: "Auto Detect", flag: "🌐" },
+  { code: "en", label: "English", flag: "🇬🇧" },
+  { code: "hi", label: "Hindi", flag: "🇮🇳" },
+  { code: "pa", label: "Punjabi", flag: "🇮🇳" },
+];
+
+const TRIAGE_BG = { emergency: "bg-red-600", urgent: "bg-orange-500", moderate: "bg-yellow-500", general: "bg-green-500" };
+
+/* ══════════════════════════════════════════════════════════════════ */
+export default function EnhancedMedicalChat() {
+  // ── Core ──
+  const [tab, setTab] = useState("chat");
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [patientId, setPatientId] = useState("");
+  const [sessionId, setSessionId] = useState(null);
+  const [sessions, setSessions] = useState([]);
+  const [dashboard, setDashboard] = useState(null);
+  const [triageInfo, setTriageInfo] = useState(null);
+  const [audioLevel, setAudioLevel] = useState(0);
+  const [darkMode, setDarkMode] = useState(false);
+
+  // ── Patient ──
+  const [showPatientForm, setShowPatientForm] = useState(false);
+  const [showPatientIdInput, setShowPatientIdInput] = useState(false);
+  const [tempPatientId, setTempPatientId] = useState("");
+  const [patientInfo, setPatientInfo] = useState({ name: "", age: "", gender: "", blood_group: "", allergies: "", chronic_conditions: "" });
+
+  // ── Dashboard data ──
+  const [labResults, setLabResults] = useState([]);
+  const [medImages, setMedImages] = useState([]);
+  const [bodyMapData, setBodyMapData] = useState({});
+  const [selectedRegion, setSelectedRegion] = useState(null);
+  const [regionImages, setRegionImages] = useState({});
+
+  // ── Voice language ──
+  const [voiceLang, setVoiceLang] = useState(null);
+  const [showLangPicker, setShowLangPicker] = useState(false);
+
+  // ── Health Score (only load on demand) ──
+  const [healthScore, setHealthScore] = useState(null);
+  const [hsLoading, setHsLoading] = useState(false);
+
+  // ── Symptom Checker ──
+  const [showSymptomChecker, setShowSymptomChecker] = useState(false);
+  const [symptomInput, setSymptomInput] = useState("");
+  const [symptomTags, setSymptomTags] = useState([]);
+  const [symptomResult, setSymptomResult] = useState(null);
+  const [symptomLoading, setSymptomLoading] = useState(false);
+
+  // ── Drug Interactions ──
+  const [showDrugChecker, setShowDrugChecker] = useState(false);
+  const [drugInput, setDrugInput] = useState("");
+  const [drugTags, setDrugTags] = useState([]);
+  const [drugResult, setDrugResult] = useState(null);
+  const [drugLoading, setDrugLoading] = useState(false);
+
+  // ── Mental Health ──
+  const [showMentalHealth, setShowMentalHealth] = useState(false);
+  const [mentalType, setMentalType] = useState("phq9");
+  const [mentalAnswers, setMentalAnswers] = useState([]);
+  const [mentalResult, setMentalResult] = useState(null);
+
+  // ── Health Report ──
+  const [reportData, setReportData] = useState(null);
+  const [reportLoading, setReportLoading] = useState(false);
+
+  // ── Manual Lab Entry ──
+  const [showLabEntry, setShowLabEntry] = useState(false);
+  const [labCatalog, setLabCatalog] = useState([]);
+  const [labSearch, setLabSearch] = useState("");
+  const [labSuggestions, setLabSuggestions] = useState([]);
+  const [selectedLabTest, setSelectedLabTest] = useState(null);
+  const [labValue, setLabValue] = useState("");
+  const [labDate, setLabDate] = useState("");
+
+  // ── Risk Predictions ──
+  const [riskData, setRiskData] = useState(null);
+  const [riskLoading, setRiskLoading] = useState(false);
+
+  // ── Organ Health ──
+  const [organData, setOrganData] = useState(null);
+  const [organLoading, setOrganLoading] = useState(false);
+
+  // ── Trends ──
+  const [trendsData, setTrendsData] = useState(null);
+  const [trendsLoading, setTrendsLoading] = useState(false);
+
+  // ── Lab Intelligence ──
+  const [labIntel, setLabIntel] = useState(null);
+  const [labIntelLoading, setLabIntelLoading] = useState(false);
+
+  // ── Medications ──
+  const [medications, setMedications] = useState([]);
+  const [showMedForm, setShowMedForm] = useState(false);
+  const [showMedTracker, setShowMedTracker] = useState(false);
+  const [medForm, setMedForm] = useState({ name: "", dosage: "", frequency: "Once daily" });
+
+  // ── Specialists ──
+  const [specialists, setSpecialists] = useState([]);
+  const [selectedSpecialist, setSelectedSpecialist] = useState(null);
+  const [showSpecialistPanel, setShowSpecialistPanel] = useState(false);
+
+  // ── Health Coach ──
+  const [coachBriefing, setCoachBriefing] = useState(null);
+  const [coachLoading, setCoachLoading] = useState(false);
+  const [showCoachPanel, setShowCoachPanel] = useState(false);
+
+  // ── Screening Plan ──
+  const [screeningPlan, setScreeningPlan] = useState(null);
+  const [screeningLoading, setScreeningLoading] = useState(false);
+  const [showScreeningPanel, setShowScreeningPanel] = useState(false);
+
+  // ── Treatment Plan ──
+  const [showTreatmentPlan, setShowTreatmentPlan] = useState(false);
+  const [treatmentCondition, setTreatmentCondition] = useState("");
+  const [treatmentResult, setTreatmentResult] = useState(null);
+  const [treatmentLoading, setTreatmentLoading] = useState(false);
+
+  // ── Smart Symptom Flow ──
+  const [showSymptomFlow, setShowSymptomFlow] = useState(false);
+  const [flowSymptom, setFlowSymptom] = useState("");
+  const [flowAnswers, setFlowAnswers] = useState({});
+  const [flowQuestion, setFlowQuestion] = useState(null);
+  const [flowDiagnosis, setFlowDiagnosis] = useState(null);
+  const [flowLoading, setFlowLoading] = useState(false);
+  const [flowSessionId, setFlowSessionId] = useState(null);
+
+  // ── Stop generation ──
+  const abortRef = useRef(null);
+  const [canStop, setCanStop] = useState(false);
+
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const endRef = useRef(null);
+  const recorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const audioCtxRef = useRef(null);
+  const analyserRef = useRef(null);
+  const animRef = useRef(null);
+
+  // ── Theme classes ──
+  const dc = darkMode ? "bg-gray-950 text-gray-100" : "bg-slate-50 text-gray-800";
+  const card = darkMode ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200";
+  const inp = darkMode ? "bg-gray-800 border-gray-700 text-gray-100 placeholder-gray-500" : "bg-white border-gray-300 text-gray-800 placeholder-gray-400";
+  const subtle = darkMode ? "text-gray-400" : "text-gray-500";
+
+  /* ── Init ── */
+  useEffect(() => {
+    const stored = localStorage.getItem("patient_id");
+    if (stored) setPatientId(stored);
+    else { const id = "patient_" + Date.now(); localStorage.setItem("patient_id", id); setPatientId(id); }
+    if (localStorage.getItem("dark_mode") === "true") setDarkMode(true);
+  }, []);
+
+  useEffect(() => { if (patientId) { loadSessions(); loadDashboard(); } }, [patientId]);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+  useEffect(() => { localStorage.setItem("dark_mode", String(darkMode)); }, [darkMode]);
+
+  /* ── Data loaders ── */
+  const loadSessions = async () => {
+    try { const r = await fetch(`${API}/api/patient/${patientId}/sessions`); if (r.ok) setSessions((await r.json()).sessions || []); } catch {}
+  };
+  const loadDashboard = async () => {
+    try {
+      const r = await fetch(`${API}/api/patient/${patientId}/dashboard`);
+      if (r.ok) {
+        const d = await r.json();
+        setDashboard(d);
+        setLabResults(d.recent_labs || []);
+        setMedImages(d.recent_images || []);
+        setBodyMapData(d.body_map || {});
+        // Populate regionImages from saved images
+        const imgMap = {};
+        for (const img of (d.recent_images || [])) {
+          if (img.body_region && img.image_path) {
+            imgMap[img.body_region] = { url: `${API}/${img.image_path}`, imageId: img.id };
+          }
+        }
+        setRegionImages(prev => ({ ...imgMap, ...Object.fromEntries(Object.entries(prev).filter(([_, v]) => v && !v.imageId)) }));
+        if (d.patient) setPatientInfo(p => ({ ...p, ...d.patient }));
+      }
+    } catch {}
+  };
+  const loadHealthScore = async () => {
+    setHsLoading(true);
+    try { const r = await fetch(`${API}/api/patient/${patientId}/health-score`); if (r.ok) setHealthScore(await r.json()); } catch {}
+    finally { setHsLoading(false); }
+  };
+
+  const loadSessionMessages = async (sid) => {
+    try {
+      const r = await fetch(`${API}/api/patient/${patientId}/history?session_id=${sid}&limit=100`);
+      if (r.ok) {
+        const d = await r.json();
+        setMessages((d.messages || []).map((m, i) => ({
+          id: Date.now() + i, role: m.role, text: m.content,
+          language: m.language, timestamp: new Date(m.timestamp),
+        })));
+        setSessionId(sid);
+        setTab("chat");
+      }
+    } catch {}
+  };
+
+  const switchPatient = () => {
+    const newId = tempPatientId.trim();
+    if (!newId) return;
+    localStorage.setItem("patient_id", newId);
+    setPatientId(newId);
+    setMessages([]); setSessionId(null); setSessions([]); setDashboard(null);
+    setHealthScore(null); setLabResults([]); setMedImages([]);
+    setShowPatientIdInput(false); setTempPatientId("");
+  };
+
+  const savePatient = async () => {
+    try {
+      const body = {};
+      if (patientInfo.name) body.name = patientInfo.name;
+      if (patientInfo.age) body.age = parseInt(patientInfo.age) || undefined;
+      if (patientInfo.gender) body.gender = patientInfo.gender;
+      if (patientInfo.blood_group) body.blood_group = patientInfo.blood_group;
+      if (patientInfo.allergies) body.allergies = patientInfo.allergies;
+      if (patientInfo.chronic_conditions) body.chronic_conditions = patientInfo.chronic_conditions;
+      await fetch(`${API}/api/patient/${patientId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      setShowPatientForm(false);
+      loadDashboard();
+    } catch {}
+  };
+
+  const addMsg = (role, text, extra = {}) => {
+    const m = { id: Date.now() + Math.random(), role, text, timestamp: new Date(), ...extra };
+    setMessages(prev => [...prev, m]);
+    return m.id;
+  };
+
+  /* ═══════════ STREAMING CHAT with abort support ═══════════ */
+  const sendMessage = async () => {
+    if (!input.trim() || isLoading) return;
+    const msg = input;
+    setInput("");
+    addMsg("user", msg);
+    setIsLoading(true);
+    setCanStop(true);
+    setTriageInfo(null);
+    const aid = addMsg("assistant", "", { isStreaming: true });
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    const useSpecialist = selectedSpecialist != null;
+    const specKey = selectedSpecialist?.name?.toLowerCase?.() || "general";
+    const endpoint = useSpecialist ? `${API}/api/chat/specialist/stream?specialist=${encodeURIComponent(specKey)}` : `${API}/api/chat/stream`;
+    const payload = { patient_id: patientId, message: msg, language: "auto", session_id: sessionId };
+
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+      if (!res.ok) throw new Error("Request failed");
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const raw = line.slice(6);
+          if (raw.trim() === "[DONE]") continue;
+          try {
+            const p = JSON.parse(raw);
+            if (p.type === "triage") setTriageInfo(p);
+            else if (p.type === "chunk") setMessages(prev => prev.map(m => m.id === aid ? { ...m, text: m.text + p.content } : m));
+            else if (p.type === "done") {
+              setSessionId(p.session_id);
+              setMessages(prev => prev.map(m => m.id === aid ? { ...m, isStreaming: false, language: p.language } : m));
+              if (p.triage) setTriageInfo(p.triage);
+            } else if (p.type === "error") throw new Error(p.content);
+          } catch (e) { if (e.name !== "AbortError" && !e.message?.includes("JSON")) throw e; }
+        }
+      }
+    } catch (e) {
+      if (e.name === "AbortError") {
+        setMessages(prev => prev.map(m => m.id === aid ? { ...m, isStreaming: false, text: m.text + "\n\n[Generation stopped]" } : m));
+      } else {
+        setMessages(prev => prev.map(m => m.id === aid ? { ...m, text: e.message || "Error occurred", isStreaming: false, error: true } : m));
+      }
+    } finally { setIsLoading(false); setCanStop(false); abortRef.current = null; loadSessions(); }
+  };
+
+  const stopGenerating = () => {
+    if (abortRef.current) { abortRef.current.abort(); }
+  };
+
+  /* ═══════════ VOICE ═══════════ */
+  const startRecording = async () => {
+    setShowLangPicker(false);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 16000 } });
+      audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      const src = audioCtxRef.current.createMediaStreamSource(stream);
+      analyserRef.current = audioCtxRef.current.createAnalyser();
+      analyserRef.current.fftSize = 256;
+      src.connect(analyserRef.current);
+      const vis = () => {
+        const buf = new Uint8Array(analyserRef.current.frequencyBinCount);
+        analyserRef.current.getByteFrequencyData(buf);
+        setAudioLevel(buf.reduce((a, b) => a + b, 0) / buf.length / 255);
+        animRef.current = requestAnimationFrame(vis);
+      };
+      vis();
+      const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "";
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : {});
+      chunksRef.current = [];
+      rec.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+      rec.onstop = async () => {
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
+        stream.getTracks().forEach(t => t.stop());
+        audioCtxRef.current?.close();
+        cancelAnimationFrame(animRef.current);
+        setAudioLevel(0);
+        await sendVoice(blob);
+      };
+      rec.start();
+      recorderRef.current = rec;
+      setIsRecording(true);
+    } catch { alert("Microphone access denied."); }
+  };
+
+  const stopRecording = () => {
+    if (recorderRef.current && isRecording) { recorderRef.current.stop(); setIsRecording(false); }
+  };
+
+  const sendVoice = async (blob) => {
+    setIsLoading(true);
+    const ph = addMsg("user", "🎤 Processing voice...");
+    try {
+      const fd = new FormData();
+      fd.append("audio", blob, "recording.webm");
+      fd.append("patient_id", patientId);
+      if (sessionId) fd.append("session_id", sessionId);
+      if (voiceLang) fd.append("language", voiceLang);
+      const r = await fetch(`${API}/api/voice/chat`, { method: "POST", body: fd });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || "Voice failed");
+      setMessages(prev => prev.filter(m => m.id !== ph));
+      addMsg("user", data.transcription.text, { language: data.transcription.language, isVoice: true });
+      const resp = data.response;
+      addMsg("assistant", resp.response_text, { language: resp.original_language, audio_url: resp.audio_url, triage: resp.triage });
+      setSessionId(resp.session_id);
+      if (resp.triage) setTriageInfo(resp.triage);
+    } catch {
+      setMessages(prev => prev.filter(m => m.id !== ph));
+      addMsg("assistant", "Could not process voice. Try again or select correct language.", { error: true });
+    } finally { setIsLoading(false); loadSessions(); }
+  };
+
+  /* ═══════════ IMAGE UPLOAD ═══════════ */
+  const handleImageUpload = async (e, region = null) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    const uploadRegion = region || selectedRegion;
+    setIsLoading(true); setCanStop(true);
+    const imgUrl = URL.createObjectURL(file);
+    addMsg("user", `📷 Image uploaded${uploadRegion ? ` for ${uploadRegion.replace(/_/g, " ")}` : ""}`, { imageUrl: imgUrl });
+    const aid = addMsg("assistant", "", { isStreaming: true });
+    if (uploadRegion) setRegionImages(prev => ({ ...prev, [uploadRegion]: { url: imgUrl, imageId: null } }));
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    try {
+      const fd = new FormData();
+      fd.append("image", file);
+      fd.append("patient_id", patientId);
+      if (sessionId) fd.append("session_id", sessionId);
+      if (uploadRegion) fd.append("body_region", uploadRegion);
+      const res = await fetch(`${API}/api/image/analyze/stream`, { method: "POST", body: fd, signal: controller.signal });
+      if (!res.ok) throw new Error("Image upload failed");
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const raw = line.slice(6);
+          if (raw.trim() === "[DONE]") continue;
+          try {
+            const p = JSON.parse(raw);
+            if (p.type === "vision") setMessages(prev => prev.map(m => m.id === aid ? { ...m, visionDesc: p.description } : m));
+            else if (p.type === "chunk") setMessages(prev => prev.map(m => m.id === aid ? { ...m, text: m.text + p.content } : m));
+            else if (p.type === "done") {
+                setSessionId(p.session_id);
+                setMessages(prev => prev.map(m => m.id === aid ? { ...m, isStreaming: false } : m));
+                if (uploadRegion && p.image_id) {
+                  setRegionImages(prev => ({ ...prev, [uploadRegion]: { url: prev[uploadRegion]?.url || imgUrl, imageId: p.image_id } }));
+                }
+                if (p.lab_count > 0) {
+                  addMsg("assistant", `📊 ${p.lab_count} lab values extracted from the document and saved to your records.`);
+                  loadDashboard();
+                }
+              }
+          } catch {}
+        }
+      }
+    } catch (e) {
+      if (e.name === "AbortError") {
+        setMessages(prev => prev.map(m => m.id === aid ? { ...m, isStreaming: false, text: m.text + "\n\n[Stopped]" } : m));
+      } else {
+        setMessages(prev => prev.map(m => m.id === aid ? { ...m, text: "Image analysis failed.", isStreaming: false, error: true } : m));
+      }
+    } finally { setIsLoading(false); setCanStop(false); abortRef.current = null; loadDashboard(); }
+  };
+
+  /* ═══════════ DELETE IMAGE ═══════════ */
+  const handleDeleteImage = async (region) => {
+    const imgData = regionImages[region];
+    if (!imgData?.imageId) return;
+    try {
+      const r = await fetch(`${API}/api/patient/${patientId}/image/${imgData.imageId}`, { method: "DELETE" });
+      if (r.ok) {
+        setRegionImages(prev => { const n = { ...prev }; delete n[region]; return n; });
+        loadDashboard();
+      }
+    } catch {}
+  };
+
+  /* ═══════════ LAB REPORT UPLOAD (image + PDF) ═══════════ */
+  const handleReportUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    setIsLoading(true);
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    addMsg("user", `📄 ${isPdf ? "PDF" : "Image"} lab report uploaded`);
+    try {
+      const fd = new FormData();
+      fd.append("image", file);
+      fd.append("patient_id", patientId);
+      if (sessionId) fd.append("session_id", sessionId);
+      const r = await fetch(`${API}/api/report/parse`, { method: "POST", body: fd });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || "Report parsing failed");
+      let txt = `Lab Report Results (${data.count} values extracted)\n\n`;
+      for (const lr of data.lab_results) {
+        const icon = lr.status === "normal" ? "✅" : lr.status === "high" || lr.status === "abnormal" ? "🔴" : lr.status === "low" ? "🟡" : lr.status === "noted" ? "🔵" : "⚪";
+        txt += `${icon} ${lr.test_name.replace(/_/g, " ").toUpperCase()}: ${lr.value} ${lr.unit || ""} (Normal: ${lr.normal_range || "N/A"}) — ${lr.status || "unknown"}\n`;
+      }
+      if (data.count === 0) txt += "No lab values could be extracted automatically. The image may be unclear or the PDF format is not supported. Try uploading a clearer photo of each page.";
+      addMsg("assistant", txt);
+      loadDashboard();
+    } catch { addMsg("assistant", "Could not parse the report. If it's a PDF, try uploading photos of individual pages instead.", { error: true }); }
+    finally { setIsLoading(false); }
+  };
+
+  /* ═══════════ SYMPTOM CHECKER ═══════════ */
+  const addSymptom = () => { const s = symptomInput.trim(); if (s && !symptomTags.includes(s)) { setSymptomTags(p => [...p, s]); setSymptomInput(""); } };
+  const runSymptomCheck = async () => {
+    if (!symptomTags.length) return;
+    setSymptomLoading(true); setSymptomResult(null);
+    try {
+      const r = await fetch(`${API}/api/symptom-check`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ patient_id: patientId, symptoms: symptomTags, age: patientInfo.age ? parseInt(patientInfo.age) : undefined, gender: patientInfo.gender || undefined }) });
+      if (r.ok) setSymptomResult(await r.json());
+    } catch {} finally { setSymptomLoading(false); }
+  };
+
+  /* ═══════════ DRUG CHECKER ═══════════ */
+  const addDrug = () => { const d = drugInput.trim(); if (d && !drugTags.includes(d)) { setDrugTags(p => [...p, d]); setDrugInput(""); } };
+  const runDrugCheck = async () => {
+    if (drugTags.length < 2) return;
+    setDrugLoading(true); setDrugResult(null);
+    try {
+      const r = await fetch(`${API}/api/drug-interactions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ patient_id: patientId, medications: drugTags }) });
+      if (r.ok) setDrugResult(await r.json());
+    } catch {} finally { setDrugLoading(false); }
+  };
+
+  /* ═══════════ MENTAL HEALTH ═══════════ */
+  const mentalQuestions = mentalType === "phq9"
+    ? ["Little interest or pleasure", "Feeling down or hopeless", "Trouble sleeping", "Feeling tired", "Poor appetite or overeating", "Feeling bad about yourself", "Trouble concentrating", "Moving slowly or being fidgety", "Thoughts of self-harm"]
+    : ["Feeling nervous or anxious", "Can't stop worrying", "Worrying too much", "Trouble relaxing", "Hard to sit still", "Easily irritable", "Feeling afraid"];
+
+  const submitMentalHealth = async () => {
+    try {
+      const r = await fetch(`${API}/api/mental-health/assess`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ patient_id: patientId, assessment_type: mentalType, responses: mentalAnswers }) });
+      if (r.ok) setMentalResult(await r.json());
+    } catch {}
+  };
+
+  /* ═══════════ REPORT ═══════════ */
+  const generateReport = async () => {
+    setReportLoading(true);
+    try { const r = await fetch(`${API}/api/patient/${patientId}/report`); if (r.ok) setReportData(await r.json()); } catch {}
+    finally { setReportLoading(false); }
+  };
+
+  /* ═══════════ LAB CATALOG AUTOCOMPLETE ═══════════ */
+  const loadLabCatalog = async () => {
+    try { const r = await fetch(`${API}/api/lab-catalog`); if (r.ok) { const d = await r.json(); setLabCatalog(d.tests || []); } } catch {}
+  };
+  useEffect(() => { loadLabCatalog(); }, []);
+
+  const handleLabSearch = (q) => {
+    setLabSearch(q);
+    setSelectedLabTest(null);
+    if (!q.trim()) { setLabSuggestions([]); return; }
+    const low = q.toLowerCase();
+    const filtered = labCatalog.filter(t => t.display.toLowerCase().includes(low) || t.name.toLowerCase().includes(low) || t.category.toLowerCase().includes(low));
+    setLabSuggestions(filtered.slice(0, 8));
+  };
+
+  const selectLabTest = (test) => {
+    setSelectedLabTest(test);
+    setLabSearch(test.display);
+    setLabSuggestions([]);
+  };
+
+  const submitLabEntry = async () => {
+    if (!selectedLabTest || !labValue.trim()) return;
+    try {
+      const r = await fetch(`${API}/api/patient/${patientId}/lab-result/manual`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ test_name: selectedLabTest.name, value: labValue.trim(), unit: selectedLabTest.unit, normal_range: selectedLabTest.normal_range, date: labDate || undefined })
+      });
+      if (r.ok) {
+        setLabSearch(""); setLabValue(""); setLabDate(""); setSelectedLabTest(null);
+        loadDashboard();
+      }
+    } catch {}
+  };
+
+  const deleteLabResult = async (resultId) => {
+    try {
+      const r = await fetch(`${API}/api/patient/${patientId}/lab-result/${resultId}`, { method: "DELETE" });
+      if (r.ok) loadDashboard();
+    } catch {}
+  };
+
+  /* ═══════════ RISK PREDICTIONS ═══════════ */
+  const loadRiskPredictions = async () => {
+    setRiskLoading(true);
+    try { const r = await fetch(`${API}/api/patient/${patientId}/risk-predictions`); if (r.ok) setRiskData(await r.json()); } catch {}
+    finally { setRiskLoading(false); }
+  };
+
+  /* ═══════════ ORGAN HEALTH ═══════════ */
+  const loadOrganHealth = async () => {
+    setOrganLoading(true);
+    try { const r = await fetch(`${API}/api/patient/${patientId}/organ-health`); if (r.ok) setOrganData(await r.json()); } catch {}
+    finally { setOrganLoading(false); }
+  };
+
+  /* ═══════════ TRENDS ═══════════ */
+  const loadTrends = async () => {
+    setTrendsLoading(true);
+    try { const r = await fetch(`${API}/api/patient/${patientId}/trends`); if (r.ok) setTrendsData(await r.json()); } catch {}
+    finally { setTrendsLoading(false); }
+  };
+
+  /* ═══════════ LAB INTELLIGENCE ═══════════ */
+  const loadLabIntelligence = async () => {
+    setLabIntelLoading(true);
+    try { const r = await fetch(`${API}/api/patient/${patientId}/lab-intelligence`); if (r.ok) setLabIntel(await r.json()); } catch {}
+    finally { setLabIntelLoading(false); }
+  };
+
+  /* ═══════════ MEDICATIONS ═══════════ */
+  const loadMedications = async () => {
+    try { const r = await fetch(`${API}/api/patient/${patientId}/medications`); if (r.ok) setMedications((await r.json()).medications || []); } catch {}
+  };
+  const addMedication = async () => {
+    if (!medForm.name.trim()) return;
+    try {
+      await fetch(`${API}/api/patient/${patientId}/medication`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(medForm) });
+      setMedForm({ name: "", dosage: "", frequency: "Once daily" }); setShowMedForm(false); loadMedications();
+    } catch {}
+  };
+  const logMedTaken = async (medId) => {
+    try { await fetch(`${API}/api/patient/${patientId}/medication/${medId}/log`, { method: "POST" }); loadMedications(); } catch {}
+  };
+  const deleteMed = async (medId) => {
+    try { await fetch(`${API}/api/patient/${patientId}/medication/${medId}`, { method: "DELETE" }); loadMedications(); } catch {}
+  };
+
+  /* ═══════════ SPECIALISTS ═══════════ */
+  const loadSpecialists = async () => {
+    try { const r = await fetch(`${API}/api/specialists`); if (r.ok) setSpecialists((await r.json()).specialists || []); } catch {}
+  };
+  useEffect(() => { loadSpecialists(); }, []);
+
+  /* ═══════════ HEALTH COACH ═══════════ */
+  const loadCoachBriefing = async () => {
+    setCoachLoading(true);
+    try { const r = await fetch(`${API}/api/patient/${patientId}/health-coach`); if (r.ok) setCoachBriefing(await r.json()); } catch {}
+    finally { setCoachLoading(false); }
+  };
+
+  /* ═══════════ SCREENING PLAN ═══════════ */
+  const loadScreeningPlan = async () => {
+    setScreeningLoading(true);
+    try { const r = await fetch(`${API}/api/patient/${patientId}/screening-plan`); if (r.ok) setScreeningPlan(await r.json()); } catch {}
+    finally { setScreeningLoading(false); }
+  };
+
+  /* ═══════════ TREATMENT PLAN ═══════════ */
+  const generateTreatmentPlan = async () => {
+    if (!treatmentCondition.trim()) return;
+    setTreatmentLoading(true); setTreatmentResult(null);
+    try {
+      const r = await fetch(`${API}/api/treatment-plan`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ patient_id: patientId, condition: treatmentCondition }) });
+      if (r.ok) setTreatmentResult(await r.json());
+    } catch {}
+    finally { setTreatmentLoading(false); }
+  };
+
+  /* ═══════════ SMART SYMPTOM FLOW ═══════════ */
+  const startSymptomFlow = async () => {
+    if (!flowSymptom.trim()) return;
+    setFlowLoading(true); setFlowDiagnosis(null); setFlowQuestion(null); setFlowAnswers({});
+    try {
+      const r = await fetch(`${API}/api/symptom-flow`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ patient_id: patientId, symptom: flowSymptom }) });
+      if (r.ok) { const d = await r.json(); if (d.type === "question") setFlowQuestion(d); if (d.session_id) setFlowSessionId(d.session_id); }
+    } catch {}
+    finally { setFlowLoading(false); }
+  };
+  const answerSymptomFlow = async (answer) => {
+    if (!flowQuestion) return;
+    const newAnswers = { ...flowAnswers, [flowQuestion.question]: answer };
+    setFlowAnswers(newAnswers);
+    setFlowLoading(true);
+    try {
+      const r = await fetch(`${API}/api/symptom-flow`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ patient_id: patientId, symptom: flowSymptom, answers: newAnswers, session_id: flowSessionId }) });
+      if (r.ok) { const d = await r.json(); if (d.type === "question") setFlowQuestion(d); else if (d.type === "diagnosis") { setFlowDiagnosis(d); setFlowQuestion(null); } }
+    } catch {}
+    finally { setFlowLoading(false); }
+  };
+
+  useEffect(() => { if (patientId) loadMedications(); }, [patientId]);
+
+  const newSession = () => { setMessages([]); setSessionId(null); setTriageInfo(null); loadSessions(); };
+
+  /* ── Audio visualizer ── */
+  const AudioBars = () => (
+    <div className="flex items-center justify-center gap-0.5 h-10">
+      {Array.from({ length: 20 }, (_, i) => {
+        const h = Math.max(10, audioLevel * 100 + Math.sin(i * 0.7 + Date.now() / 140) * 15);
+        return <div key={i} className="w-1 rounded-full transition-all duration-75" style={{ height: `${h}%`, background: `hsl(${i * 5}, 75%, 55%)` }} />;
+      })}
+    </div>
+  );
+
+  /* ── Health Score Ring (on demand) ── */
+  const ScoreRing = ({ score, size = 100 }) => {
+    const r = (size - 10) / 2;
+    const circ = 2 * Math.PI * r;
+    const offset = circ - (score / 100) * circ;
+    const color = score >= 80 ? "#22c55e" : score >= 60 ? "#eab308" : "#ef4444";
+    return (
+      <svg width={size} height={size} className="transform -rotate-90">
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={darkMode ? "#1f2937" : "#e5e7eb"} strokeWidth="8" />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth="8" strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round" className="transition-all duration-700" />
+        <text x={size / 2} y={size / 2} textAnchor="middle" dominantBaseline="central" className="text-xl font-bold" fill={color} transform={`rotate(90 ${size / 2} ${size / 2})`}>{score}</text>
+      </svg>
+    );
+  };
+
+  /* ═══════════════════════════════════════════════════════════════
+     RENDER
+     ═══════════════════════════════════════════════════════════════ */
+  return (
+    <div className={`flex h-screen ${dc} transition-colors duration-200`}>
+
+      {/* ════════ SIDEBAR ════════ */}
+      <div className={`${sidebarOpen ? "w-72" : "w-0 overflow-hidden"} ${card} border-r flex flex-col transition-all duration-200 flex-shrink-0`}>
+
+        {/* Header */}
+        <div className="p-4 bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 text-white">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center text-xl backdrop-blur">🏥</div>
+            <div>
+              <h1 className="font-bold text-lg leading-tight">AI Doctor</h1>
+              <p className="text-[10px] text-blue-200 uppercase tracking-widest">Medical AI Assistant</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Patient card */}
+        <div className={`p-3 border-b ${darkMode ? "border-gray-800" : "border-gray-100"}`}>
+          <div className="flex items-center justify-between mb-1">
+            <span className={`text-[10px] font-semibold uppercase tracking-wider ${subtle}`}>Patient</span>
+            <div className="flex gap-1.5">
+              <button onClick={() => setShowPatientIdInput(!showPatientIdInput)} title="Switch Patient" className={`hover:text-blue-500 ${subtle}`}><Settings size={12} /></button>
+              <button onClick={() => setShowPatientForm(!showPatientForm)} title="Edit Profile" className={`hover:text-blue-500 ${subtle}`}><User size={12} /></button>
+              <button onClick={() => setDarkMode(!darkMode)} className={subtle}>{darkMode ? <Sun size={12} /> : <Moon size={12} />}</button>
+            </div>
+          </div>
+          <p className="text-sm font-semibold truncate">{patientInfo.name || patientId?.slice(0, 20)}</p>
+          {patientInfo.age && <p className={`text-xs ${subtle}`}>{patientInfo.age}y • {patientInfo.gender || "—"} • {patientInfo.blood_group || "—"}</p>}
+        </div>
+
+        {/* Patient ID switch */}
+        {showPatientIdInput && (
+          <div className={`p-3 border-b space-y-1.5 ${darkMode ? "bg-gray-800/50 border-gray-800" : "bg-blue-50 border-gray-100"}`}>
+            <p className={`text-[10px] font-medium ${subtle}`}>Enter or create a Patient ID:</p>
+            <input value={tempPatientId} onChange={e => setTempPatientId(e.target.value)} onKeyDown={e => { if (e.key === "Enter") switchPatient(); }}
+              placeholder="e.g. john_doe_01" className={`w-full px-2 py-1.5 text-xs border rounded-lg ${inp}`} />
+            <button onClick={switchPatient} className="w-full py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">Switch Patient</button>
+          </div>
+        )}
+
+        {/* Patient profile form */}
+        {showPatientForm && (
+          <div className={`p-3 border-b space-y-1.5 ${darkMode ? "bg-gray-800/50 border-gray-800" : "bg-blue-50 border-gray-100"}`}>
+            {["name", "age", "gender", "blood_group", "allergies", "chronic_conditions"].map(f => (
+              <input key={f} placeholder={f.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
+                value={patientInfo[f] || ""} onChange={e => setPatientInfo(p => ({ ...p, [f]: e.target.value }))}
+                className={`w-full px-2 py-1 text-xs border rounded-lg ${inp}`} />
+            ))}
+            <button onClick={savePatient} className="w-full py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">Save Profile</button>
+          </div>
+        )}
+
+        {/* Tabs */}
+        <div className={`grid grid-cols-4 border-b text-[10px] ${darkMode ? "border-gray-800" : "border-gray-100"}`}>
+          {[{ id: "chat", icon: Send, label: "Chat" }, { id: "dashboard", icon: Activity, label: "Health" }, { id: "tools", icon: Stethoscope, label: "Tools" }, { id: "reports", icon: FileText, label: "Reports" }].map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className={`py-2.5 flex flex-col items-center gap-0.5 font-medium border-b-2 transition-colors ${tab === t.id ? "border-blue-500 text-blue-500" : `border-transparent ${subtle} hover:opacity-80`}`}>
+              <t.icon size={13} />{t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Sessions list */}
+        <div className="flex-1 overflow-auto p-2 space-y-1">
+          <button onClick={newSession}
+            className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg transition-colors ${darkMode ? "text-blue-400 bg-blue-950/40 hover:bg-blue-950/60" : "text-blue-600 bg-blue-50 hover:bg-blue-100"}`}>
+            <Plus size={13} /> New Chat
+          </button>
+          {sessions.map(s => (
+            <button key={s.session_id} onClick={() => loadSessionMessages(s.session_id)}
+              className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors ${darkMode ? "hover:bg-gray-800" : "hover:bg-gray-50"} ${sessionId === s.session_id ? (darkMode ? "bg-blue-950/40 border border-blue-900" : "bg-blue-50 border border-blue-200") : ""}`}>
+              <div className="flex justify-between items-center">
+                <span className="font-medium truncate flex-1">{s.summary || `Session ${s.session_id?.slice(0, 8)}`}</span>
+                <span className={`text-[10px] ml-1 ${subtle}`}>{s.message_count || 0} msgs</span>
+              </div>
+              {s.started_at && <p className={`text-[10px] mt-0.5 ${subtle}`}>{new Date(s.started_at).toLocaleDateString()}</p>}
+            </button>
+          ))}
+        </div>
+
+        {/* Quick tools */}
+        <div className={`p-2 border-t space-y-0.5 ${darkMode ? "border-gray-800" : "border-gray-100"}`}>
+          {[
+            { icon: Brain, label: "Symptom Checker", fn: () => { setTab("tools"); setShowSymptomChecker(true); setShowDrugChecker(false); setShowMentalHealth(false); } },
+            { icon: Pill, label: "Drug Interactions", fn: () => { setTab("tools"); setShowDrugChecker(true); setShowSymptomChecker(false); setShowMentalHealth(false); } },
+            { icon: Heart, label: "Mental Health", fn: () => { setTab("tools"); setShowMentalHealth(true); setShowSymptomChecker(false); setShowDrugChecker(false); } },
+          ].map((t, i) => (
+            <button key={i} onClick={t.fn} className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg transition-colors ${darkMode ? "hover:bg-gray-800 text-gray-400" : "hover:bg-gray-50 text-gray-600"}`}>
+              <t.icon size={12} /> {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ════════ MAIN ════════ */}
+      <div className="flex-1 flex flex-col min-w-0">
+
+        {/* Top bar */}
+        <div className={`flex items-center gap-3 px-4 py-2 border-b ${card}`}>
+          <button onClick={() => setSidebarOpen(!sidebarOpen)} className={`${subtle} hover:opacity-100`}>
+            <ChevronRight size={16} className={`transform transition-transform ${sidebarOpen ? "rotate-180" : ""}`} />
+          </button>
+          <div className="flex-1" />
+          {triageInfo && triageInfo.level !== "general" && (
+            <div className={`px-3 py-1 rounded-full text-white text-xs font-semibold flex items-center gap-1.5 ${TRIAGE_BG[triageInfo.level]}`}>
+              {triageInfo.level === "emergency" ? <AlertTriangle size={12} /> : <Shield size={12} />}
+              {triageInfo.level.toUpperCase()} — {triageInfo.reason}
+            </div>
+          )}
+          <div className="flex-1" />
+          {canStop && (
+            <button onClick={stopGenerating} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-red-500 text-white rounded-lg hover:bg-red-600 shadow-sm animate-pulse">
+              <Square size={12} /> Stop
+            </button>
+          )}
+        </div>
+
+        {/* ══════ CHAT TAB ══════ */}
+        {tab === "chat" && (
+          <>
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="max-w-3xl mx-auto space-y-3">
+                {messages.length === 0 && (
+                  <div className="text-center mt-16">
+                    <div className="text-5xl mb-4">👨‍⚕️</div>
+                    <h2 className="text-2xl font-bold mb-2">AI Doctor</h2>
+                    <p className={`text-sm mb-8 ${subtle}`}>Describe your symptoms in English, Hindi, or Punjabi</p>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-xl mx-auto">
+                      {[{ icon: "🗣️", label: "Voice", desc: "Speak any language" }, { icon: "📷", label: "X-ray", desc: "Upload scans" }, { icon: "🧪", label: "Lab Reports", desc: "Auto-extract" }, { icon: "🧠", label: "AI Tools", desc: "Symptom check" }].map((f, i) => (
+                        <div key={i} className={`${card} rounded-xl p-3 border text-center`}>
+                          <div className="text-2xl mb-1">{f.icon}</div>
+                          <p className="text-xs font-semibold">{f.label}</p>
+                          <p className={`text-[10px] ${subtle}`}>{f.desc}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {messages.map(m => (
+                  <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                    <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                      m.role === "user"
+                        ? "bg-blue-600 text-white rounded-br-sm"
+                        : m.error ? `${darkMode ? "bg-red-950/40 border-red-900" : "bg-red-50 border-red-200"} border rounded-bl-sm`
+                        : `${card} border rounded-bl-sm`
+                    }`}>
+                      {m.imageUrl && <img src={m.imageUrl} alt="Upload" className="rounded-lg mb-2 max-h-40 object-cover" />}
+                      {m.isVoice && (
+                        <div className={`flex items-center gap-1 mb-1 text-[10px] ${m.role === "user" ? "text-blue-200" : subtle}`}>
+                          <Mic size={10} /> Voice • {VOICE_LANGUAGES.find(l => l.code === m.language)?.label || m.language}
+                        </div>
+                      )}
+                      {m.visionDesc && (
+                        <div className={`text-xs p-2 rounded-lg mb-2 border ${darkMode ? "bg-blue-950/30 border-blue-900 text-blue-300" : "bg-blue-50 border-blue-100 text-blue-700"}`}>
+                          🔍 {m.visionDesc}
+                        </div>
+                      )}
+                      <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+                        {m.text}
+                        {m.isStreaming && <span className="inline-block w-1.5 h-4 ml-0.5 bg-blue-500 rounded-sm animate-pulse" />}
+                      </div>
+                      {m.audio_url && (
+                        <button onClick={() => { const a = new Audio(`${API}${m.audio_url}`); a.play(); }}
+                          className={`mt-2 flex items-center gap-1 text-xs transition-opacity ${m.role === "user" ? "text-blue-200 hover:text-white" : `${subtle} hover:opacity-100`}`}>
+                          <Volume2 size={12} /> Play audio
+                        </button>
+                      )}
+                      <div className={`text-[10px] mt-1 text-right ${m.role === "user" ? "text-blue-300" : subtle} opacity-50`}>
+                        {m.timestamp?.toLocaleTimeString?.([], { hour: "2-digit", minute: "2-digit" })}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {isLoading && messages.length > 0 && !messages[messages.length - 1]?.isStreaming && (
+                  <div className="flex justify-start">
+                    <div className={`${card} rounded-2xl px-4 py-3 border`}>
+                      <div className="flex gap-1"><div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" /><div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: "0.15s" }} /><div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: "0.3s" }} /></div>
+                    </div>
+                  </div>
+                )}
+                <div ref={endRef} />
+              </div>
+            </div>
+
+            {/* Input */}
+            <div className={`${card} border-t p-3`}>
+              <div className="max-w-3xl mx-auto">
+                {isRecording && (
+                  <div className={`mb-3 rounded-xl p-3 border ${darkMode ? "bg-red-950/30 border-red-900" : "bg-red-50 border-red-200"}`}>
+                    <div className="text-center text-red-500 text-xs font-semibold mb-1">🎙️ Recording{voiceLang ? ` (${VOICE_LANGUAGES.find(l => l.code === voiceLang)?.label})` : ""}...</div>
+                    <AudioBars />
+                  </div>
+                )}
+                <div className="flex items-end gap-2">
+                  <label className="cursor-pointer flex-shrink-0">
+                    <input type="file" accept="image/*" onChange={e => handleImageUpload(e)} className="hidden" disabled={isLoading || isRecording} />
+                    <div className={`w-9 h-9 flex items-center justify-center rounded-xl transition-all ${isLoading ? "opacity-30" : darkMode ? "bg-purple-950/40 text-purple-400 hover:bg-purple-950/60" : "bg-purple-50 text-purple-500 hover:bg-purple-100"}`} title="Upload X-ray / Photo">
+                      <ImageIcon size={15} />
+                    </div>
+                  </label>
+                  <label className="cursor-pointer flex-shrink-0">
+                    <input type="file" accept="image/*,.pdf" onChange={handleReportUpload} className="hidden" disabled={isLoading || isRecording} />
+                    <div className={`w-9 h-9 flex items-center justify-center rounded-xl transition-all ${isLoading ? "opacity-30" : darkMode ? "bg-green-950/40 text-green-400 hover:bg-green-950/60" : "bg-green-50 text-green-500 hover:bg-green-100"}`} title="Upload Lab Report (Image or PDF)">
+                      <FileText size={15} />
+                    </div>
+                  </label>
+                  <div className="flex-1">
+                    {selectedSpecialist && (
+                      <div className={`flex items-center gap-1.5 mb-1 px-2`}>
+                        <span className="text-[10px] font-medium">{selectedSpecialist.icon} Consulting: {selectedSpecialist.name}</span>
+                        <button onClick={() => setSelectedSpecialist(null)} className={`text-[10px] ${subtle} hover:text-red-500`}><X size={10} /></button>
+                      </div>
+                    )}
+                    <textarea value={input} onChange={e => setInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+                      placeholder="Describe symptoms... (EN / हिंदी / ਪੰਜਾਬੀ)"
+                      className={`w-full px-4 py-2.5 border rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 resize-none text-sm ${inp}`}
+                      rows={1} disabled={isLoading || isRecording} style={{ minHeight: 40, maxHeight: 100 }} />
+                  </div>
+                  {input.trim() ? (
+                    <button onClick={sendMessage} disabled={isLoading}
+                      className="w-9 h-9 flex-shrink-0 flex items-center justify-center bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:bg-gray-400">
+                      {isLoading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                    </button>
+                  ) : (
+                    <div className="relative flex-shrink-0">
+                      {showLangPicker && !isRecording && (
+                        <div className={`absolute bottom-12 right-0 ${card} border rounded-xl shadow-xl p-1 z-50 min-w-[150px]`}>
+                          <p className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-1 ${subtle}`}>Voice Language</p>
+                          {VOICE_LANGUAGES.map(l => (
+                            <button key={l.code || "auto"} onClick={() => { setVoiceLang(l.code); setShowLangPicker(false); }}
+                              className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg transition-colors ${voiceLang === l.code ? (darkMode ? "bg-blue-950/50 text-blue-400" : "bg-blue-100 text-blue-600") : (darkMode ? "hover:bg-gray-800" : "hover:bg-gray-50")}`}>
+                              <span>{l.flag}</span> {l.label}
+                              {voiceLang === l.code && <Check size={10} className="ml-auto text-blue-500" />}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex gap-1">
+                        <button onClick={() => setShowLangPicker(!showLangPicker)} disabled={isLoading || isRecording}
+                          className={`w-9 h-9 flex items-center justify-center rounded-xl transition-all ${darkMode ? "bg-gray-800 text-gray-400 hover:bg-gray-700" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`} title="Voice language">
+                          <Globe size={14} />
+                        </button>
+                        <button onClick={isRecording ? stopRecording : startRecording} disabled={isLoading}
+                          className={`w-9 h-9 flex items-center justify-center rounded-xl transition-all ${isRecording ? "bg-red-500 text-white animate-pulse" : "bg-indigo-500 text-white hover:bg-indigo-600"}`}>
+                          {isRecording ? <MicOff size={15} /> : <Mic size={15} />}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className={`flex items-center justify-center gap-3 mt-1.5 text-[10px] ${subtle}`}>
+                  <span>🎤 {VOICE_LANGUAGES.find(l => l.code === voiceLang)?.label || "Auto"}</span>
+                  <span>•</span><span>📷 X-ray & Photos</span><span>•</span><span>📄 Lab Reports & PDF</span>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ══════ DASHBOARD TAB ══════ */}
+        {tab === "dashboard" && (
+          <div className="flex-1 overflow-auto p-4 md:p-6">
+            <div className="max-w-5xl mx-auto space-y-5">
+
+              {/* Health Score — on demand */}
+              <div className={`${card} rounded-2xl border p-5`}>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className={`text-sm font-semibold uppercase tracking-wider ${subtle}`}>Health Score</h3>
+                  <button onClick={loadHealthScore} disabled={hsLoading}
+                    className={`text-xs px-3 py-1 rounded-lg font-medium transition-colors ${darkMode ? "bg-blue-950/50 text-blue-400 hover:bg-blue-950/70" : "bg-blue-50 text-blue-600 hover:bg-blue-100"}`}>
+                    {hsLoading ? <Loader2 size={12} className="animate-spin" /> : "Calculate Score"}
+                  </button>
+                </div>
+                {healthScore ? (
+                  <div className="flex items-center gap-5">
+                    <ScoreRing score={healthScore.score} />
+                    <div>
+                      <p className="text-lg font-bold">Grade: {healthScore.grade}</p>
+                      {healthScore.factors?.slice(0, 3).map((f, i) => (
+                        <p key={i} className={`text-xs ${subtle}`}>{f.impact > 0 ? "+" : ""}{f.impact} {f.factor}</p>
+                      ))}
+                      {healthScore.recommendations?.slice(0, 2).map((r, i) => (
+                        <p key={i} className="text-xs text-blue-500 mt-0.5">→ {r}</p>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <p className={`text-xs ${subtle}`}>Fill your profile and add health data first, then click Calculate to see your score.</p>
+                )}
+              </div>
+
+              {/* Quick Stats */}
+              <div className="grid grid-cols-4 gap-3">
+                {[{ label: "Sessions", value: sessions.length, bg: "#3b82f6" }, { label: "Lab Tests", value: labResults.length, bg: "#22c55e" }, { label: "Images", value: medImages.length, bg: "#a855f7" }, { label: "Events", value: dashboard?.timeline?.length || 0, bg: "#f97316" }].map((s, i) => (
+                  <div key={i} className={`${card} rounded-xl border p-3 text-center`}>
+                    <div className="text-xl font-bold" style={{ color: s.bg }}>{s.value}</div>
+                    <p className={`text-[10px] ${subtle}`}>{s.label}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Risk Predictions */}
+              <div className={`${card} rounded-2xl border p-5`}>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-sm flex items-center gap-2">⚠️ Risk Predictions</h3>
+                  <button onClick={loadRiskPredictions} disabled={riskLoading}
+                    className={`text-xs px-3 py-1 rounded-lg font-medium ${darkMode ? "bg-red-950/50 text-red-400" : "bg-red-50 text-red-600"}`}>
+                    {riskLoading ? <Loader2 size={12} className="animate-spin" /> : "Assess Risks"}
+                  </button>
+                </div>
+                {riskData?.risks?.length > 0 ? (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    {riskData.risks.map((r, i) => (
+                      <div key={i} className={`p-3 rounded-xl border text-center ${r.score >= 70 ? (darkMode ? "bg-red-950/30 border-red-900" : "bg-red-50 border-red-200") : r.score >= 40 ? (darkMode ? "bg-yellow-950/30 border-yellow-900" : "bg-yellow-50 border-yellow-200") : (darkMode ? "bg-green-950/30 border-green-900" : "bg-green-50 border-green-200")}`}>
+                        <p className={`text-xl font-bold ${r.score >= 70 ? "text-red-500" : r.score >= 40 ? "text-yellow-500" : "text-green-500"}`}>{r.score}%</p>
+                        <p className="text-[10px] font-medium capitalize mt-0.5">{r.disease.replace(/_/g, " ")}</p>
+                        <p className={`text-[9px] ${subtle}`}>{r.grade}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : riskData ? (
+                  <p className={`text-xs ${subtle}`}>No significant risk factors detected from current lab data.</p>
+                ) : (
+                  <p className={`text-xs ${subtle}`}>Analyzes lab results to predict risk of diabetes, heart disease, stroke, and more.</p>
+                )}
+              </div>
+
+              {/* Organ Health Scores */}
+              <div className={`${card} rounded-2xl border p-5`}>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-sm flex items-center gap-2">🫀 Organ Health Map</h3>
+                  <button onClick={loadOrganHealth} disabled={organLoading}
+                    className={`text-xs px-3 py-1 rounded-lg font-medium ${darkMode ? "bg-teal-950/50 text-teal-400" : "bg-teal-50 text-teal-600"}`}>
+                    {organLoading ? <Loader2 size={12} className="animate-spin" /> : "Scan Organs"}
+                  </button>
+                </div>
+                {organData?.organs?.length > 0 ? (
+                  <div>
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className={`text-center px-4 py-2 rounded-xl ${organData.overall >= 80 ? (darkMode ? "bg-green-950/40" : "bg-green-50") : organData.overall >= 60 ? (darkMode ? "bg-yellow-950/40" : "bg-yellow-50") : (darkMode ? "bg-red-950/40" : "bg-red-50")}`}>
+                        <p className={`text-2xl font-bold ${organData.overall >= 80 ? "text-green-500" : organData.overall >= 60 ? "text-yellow-500" : "text-red-500"}`}>{organData.overall}</p>
+                        <p className={`text-[10px] ${subtle}`}>Overall</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
+                      {organData.organs.map((o, i) => (
+                        <div key={i} className={`p-2.5 rounded-xl border text-center ${o.score >= 80 ? (darkMode ? "bg-green-950/20 border-green-900/50" : "bg-green-50 border-green-100") : o.score >= 60 ? (darkMode ? "bg-yellow-950/20 border-yellow-900/50" : "bg-yellow-50 border-yellow-100") : (darkMode ? "bg-red-950/20 border-red-900/50" : "bg-red-50 border-red-100")}`}>
+                          <p className="text-lg">{o.icon || "🏥"}</p>
+                          <p className={`text-lg font-bold ${o.score >= 80 ? "text-green-500" : o.score >= 60 ? "text-yellow-500" : "text-red-500"}`}>{o.score}</p>
+                          <p className="text-[10px] font-medium capitalize">{o.organ}</p>
+                          <p className={`text-[9px] ${subtle}`}>{o.grade}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : organData ? (
+                  <p className={`text-xs ${subtle}`}>Not enough lab data to compute organ health scores.</p>
+                ) : (
+                  <p className={`text-xs ${subtle}`}>Computes health scores for heart, liver, kidney, thyroid, and more from your lab results.</p>
+                )}
+              </div>
+
+              {/* Body Map */}
+              <div className={`${card} rounded-2xl border p-5`}>
+                <h3 className={`text-sm font-semibold uppercase tracking-wider mb-3 ${subtle}`}>Body Map</h3>
+                <div className="flex gap-6 flex-col md:flex-row">
+                  <div className="relative flex-shrink-0 mx-auto">
+                    <svg width="300" height="400" viewBox="0 0 300 400" className="drop-shadow-sm">
+                      <defs>
+                        <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor={darkMode ? "#1e293b" : "#dbeafe"} />
+                          <stop offset="100%" stopColor={darkMode ? "#0f172a" : "#e0e7ff"} />
+                        </linearGradient>
+                        {BODY_REGIONS.map(r => <clipPath key={`c-${r.id}`} id={`c-${r.id}`}><circle cx={r.cx} cy={r.cy} r="20" /></clipPath>)}
+                      </defs>
+                      <rect width="300" height="400" rx="16" fill="url(#bgGrad)" />
+                      <ellipse cx="150" cy="32" rx="20" ry="23" fill="none" stroke={darkMode ? "#334155" : "#94a3b8"} strokeWidth="1.5" opacity="0.5" />
+                      <line x1="150" y1="55" x2="150" y2="230" stroke={darkMode ? "#334155" : "#94a3b8"} strokeWidth="1.5" opacity="0.5" />
+                      <line x1="150" y1="100" x2="80" y2="190" stroke={darkMode ? "#334155" : "#94a3b8"} strokeWidth="1.5" opacity="0.5" />
+                      <line x1="150" y1="100" x2="220" y2="190" stroke={darkMode ? "#334155" : "#94a3b8"} strokeWidth="1.5" opacity="0.5" />
+                      <line x1="150" y1="230" x2="125" y2="370" stroke={darkMode ? "#334155" : "#94a3b8"} strokeWidth="1.5" opacity="0.5" />
+                      <line x1="150" y1="230" x2="175" y2="370" stroke={darkMode ? "#334155" : "#94a3b8"} strokeWidth="1.5" opacity="0.5" />
+                      {BODY_REGIONS.map(r => {
+                        const hasData = bodyMapData[r.id];
+                        const hasImg = regionImages[r.id]?.url;
+                        const sel = selectedRegion === r.id;
+                        return (
+                          <g key={r.id} onClick={() => setSelectedRegion(r.id === selectedRegion ? null : r.id)} className="cursor-pointer">
+                            {hasImg && <image href={hasImg} x={r.cx - 20} y={r.cy - 20} width="40" height="40" clipPath={`url(#c-${r.id})`} opacity="0.7" preserveAspectRatio="xMidYMid slice" />}
+                            <circle cx={r.cx} cy={r.cy} r={sel ? 13 : 9}
+                              fill={hasImg ? "rgba(239,68,68,0.15)" : hasData ? "rgba(239,68,68,0.5)" : sel ? "rgba(59,130,246,0.4)" : "rgba(148,163,184,0.3)"}
+                              stroke={hasImg ? "#ef4444" : hasData ? "#dc2626" : sel ? "#3b82f6" : "#94a3b8"}
+                              strokeWidth={sel ? 2.5 : 1.5} className="transition-all duration-200" />
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    {selectedRegion ? (() => {
+                      const reg = BODY_REGIONS.find(r => r.id === selectedRegion);
+                      return (
+                        <div>
+                          <h4 className="font-bold">{reg?.label}</h4>
+                          <p className={`text-xs ${subtle} mb-3`}>{reg?.desc}</p>
+                          {regionImages[selectedRegion]?.url && (
+                            <div className="relative inline-block mb-3">
+                              <img src={regionImages[selectedRegion].url} alt="X-ray" className="rounded-xl max-h-36 object-cover border" />
+                              <button onClick={() => handleDeleteImage(selectedRegion)} className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full hover:bg-red-700 transition-colors" title="Delete image">
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          )}
+                          <label className="inline-flex items-center gap-2 px-3 py-2 text-xs bg-blue-600 text-white rounded-lg cursor-pointer hover:bg-blue-700">
+                            <Upload size={12} /> Upload X-ray / Photo
+                            <input type="file" accept="image/*" className="hidden" onChange={e => handleImageUpload(e, selectedRegion)} />
+                          </label>
+                        </div>
+                      );
+                    })() : (
+                      <div className={`text-center mt-8 ${subtle}`}>
+                        <Eye size={28} className="mx-auto mb-2 opacity-30" />
+                        <p className="text-sm">Click a body region</p>
+                        <p className="text-xs mt-1">🔴 Red = regions with data</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Lab Results */}
+              {labResults.length > 0 && (
+                <div className={`${card} rounded-2xl border overflow-hidden`}>
+                  <div className={`px-5 py-3 border-b flex items-center justify-between ${darkMode ? "border-gray-800" : "border-gray-100"}`}>
+                    <h3 className={`text-sm font-semibold uppercase tracking-wider ${subtle}`}>Lab Results</h3>
+                    <span className={`text-xs ${subtle}`}>{labResults.length} values</span>
+                  </div>
+                  <div className="max-h-[400px] overflow-auto">
+                    <table className="w-full text-sm">
+                      <thead className={`sticky top-0 ${darkMode ? "bg-gray-800" : "bg-gray-50"}`}>
+                        <tr>{["Test", "Value", "Normal", "Status"].map(h => <th key={h} className={`px-4 py-2 text-left text-[10px] font-semibold uppercase ${subtle}`}>{h}</th>)}</tr>
+                      </thead>
+                      <tbody className={`divide-y ${darkMode ? "divide-gray-800" : "divide-gray-50"}`}>
+                        {labResults.map((r, i) => (
+                          <tr key={i}>
+                            <td className="px-4 py-2 font-medium capitalize">{(r.test_name || "").replace(/_/g, " ")}</td>
+                            <td className="px-4 py-2">{r.value} {r.unit || ""}</td>
+                            <td className={`px-4 py-2 ${subtle}`}>{r.normal_range || "—"}</td>
+                            <td className="px-4 py-2">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${r.status === "normal" ? (darkMode ? "bg-green-950/50 text-green-400" : "bg-green-50 text-green-700") : r.status === "high" || r.status === "abnormal" ? (darkMode ? "bg-red-950/50 text-red-400" : "bg-red-50 text-red-700") : r.status === "noted" ? (darkMode ? "bg-blue-950/50 text-blue-400" : "bg-blue-50 text-blue-700") : (darkMode ? "bg-yellow-950/50 text-yellow-400" : "bg-yellow-50 text-yellow-700")}`}>{r.status || "—"}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Timeline */}
+              {dashboard?.timeline?.length > 0 && (
+                <div className={`${card} rounded-2xl border`}>
+                  <div className={`px-5 py-3 border-b ${darkMode ? "border-gray-800" : "border-gray-100"}`}>
+                    <h3 className={`text-sm font-semibold uppercase tracking-wider ${subtle}`}>Timeline</h3>
+                  </div>
+                  <div className={`divide-y ${darkMode ? "divide-gray-800" : "divide-gray-50"}`}>
+                    {dashboard.timeline.slice(0, 10).map((ev, i) => (
+                      <div key={i} className="px-5 py-3 flex items-start gap-3">
+                        <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${ev.severity === "critical" ? "bg-red-500" : ev.severity === "urgent" ? "bg-orange-500" : "bg-blue-400"}`} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between">
+                            <p className="text-sm font-medium">{ev.title}</p>
+                            <span className={`text-[10px] ml-2 ${subtle}`}>{ev.date}</span>
+                          </div>
+                          {ev.description && <p className={`text-xs truncate ${subtle}`}>{ev.description}</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ══════ TOOLS TAB ══════ */}
+        {tab === "tools" && (
+          <div className="flex-1 overflow-auto p-4 md:p-6">
+            <div className="max-w-3xl mx-auto space-y-5">
+
+              {!showSymptomChecker && !showDrugChecker && !showMentalHealth && !showMedTracker && !showSpecialistPanel && !showTreatmentPlan && !showSymptomFlow && !showCoachPanel && !showScreeningPanel && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {[
+                    { icon: Brain, t: "Symptom Checker", d: "AI differential diagnosis", c: "#3b82f6", fn: () => setShowSymptomChecker(true) },
+                    { icon: Pill, t: "Drug Interactions", d: "Check medication safety", c: "#22c55e", fn: () => setShowDrugChecker(true) },
+                    { icon: Heart, t: "Mental Health", d: "PHQ-9 & GAD-7 screening", c: "#a855f7", fn: () => setShowMentalHealth(true) },
+                    { icon: ClipboardList, t: "Medication Tracker", d: "Track medications & adherence", c: "#f59e0b", fn: () => setShowMedTracker(true) },
+                    { icon: Stethoscope, t: "AI Specialists", d: "Consult specialist doctors", c: "#06b6d4", fn: () => setShowSpecialistPanel(true) },
+                    { icon: Target, t: "Smart Symptom Flow", d: "Guided symptom questioning", c: "#ec4899", fn: () => setShowSymptomFlow(true) },
+                    { icon: FileText, t: "Treatment Plan", d: "AI personalized treatment", c: "#8b5cf6", fn: () => setShowTreatmentPlan(true) },
+                    { icon: Sparkles, t: "Health Coach", d: "Daily health briefing", c: "#10b981", fn: () => setShowCoachPanel(true) },
+                    { icon: Calendar, t: "Screening Planner", d: "Preventive health schedule", c: "#f97316", fn: () => setShowScreeningPanel(true) },
+                  ].map((t, i) => (
+                    <button key={i} onClick={t.fn} className={`${card} rounded-2xl border p-5 text-left hover:shadow-md transition-all group`}>
+                      <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-3 group-hover:scale-105 transition-transform" style={{ backgroundColor: t.c + "18" }}>
+                        <t.icon size={22} style={{ color: t.c }} />
+                      </div>
+                      <h3 className="font-bold text-sm mb-0.5">{t.t}</h3>
+                      <p className={`text-xs ${subtle}`}>{t.d}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Symptom Checker */}
+              {showSymptomChecker && (
+                <div className={`${card} rounded-2xl border p-5`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-bold flex items-center gap-2"><Brain size={18} className="text-blue-500" /> Symptom Checker</h3>
+                    <button onClick={() => { setShowSymptomChecker(false); setSymptomResult(null); setSymptomTags([]); }} className={subtle}><X size={16} /></button>
+                  </div>
+                  <div className="flex gap-2 mb-3">
+                    <input value={symptomInput} onChange={e => setSymptomInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addSymptom(); }}
+                      placeholder="Type symptom, press Enter..." className={`flex-1 px-3 py-2 text-sm border rounded-xl ${inp}`} />
+                    <button onClick={addSymptom} className="px-3 py-2 bg-blue-600 text-white rounded-xl text-sm hover:bg-blue-700">Add</button>
+                  </div>
+                  {symptomTags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                      {symptomTags.map((s, i) => (
+                        <span key={i} className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs ${darkMode ? "bg-blue-950/50 text-blue-300" : "bg-blue-50 text-blue-700"}`}>
+                          {s} <button onClick={() => setSymptomTags(p => p.filter((_, j) => j !== i))}><X size={10} /></button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <button onClick={runSymptomCheck} disabled={!symptomTags.length || symptomLoading}
+                    className="px-5 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:opacity-40 flex items-center gap-2">
+                    {symptomLoading ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />} Analyze
+                  </button>
+                  {symptomResult && (
+                    <div className={`mt-4 p-4 rounded-xl border ${darkMode ? "bg-gray-800 border-gray-700" : "bg-blue-50 border-blue-100"}`}>
+                      {symptomResult.triage?.level !== "general" && (
+                        <div className={`mb-2 px-2.5 py-1 rounded-lg text-white text-xs font-semibold inline-flex items-center gap-1 ${TRIAGE_BG[symptomResult.triage?.level]}`}>
+                          <AlertTriangle size={11} /> {symptomResult.triage?.level?.toUpperCase()}
+                        </div>
+                      )}
+                      <div className="whitespace-pre-wrap text-sm leading-relaxed">{symptomResult.analysis}</div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Drug Checker */}
+              {showDrugChecker && (
+                <div className={`${card} rounded-2xl border p-5`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-bold flex items-center gap-2"><Pill size={18} className="text-green-500" /> Drug Interactions</h3>
+                    <button onClick={() => { setShowDrugChecker(false); setDrugResult(null); setDrugTags([]); }} className={subtle}><X size={16} /></button>
+                  </div>
+                  <div className="flex gap-2 mb-3">
+                    <input value={drugInput} onChange={e => setDrugInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addDrug(); }}
+                      placeholder="Medication name, press Enter..." className={`flex-1 px-3 py-2 text-sm border rounded-xl ${inp}`} />
+                    <button onClick={addDrug} className="px-3 py-2 bg-green-600 text-white rounded-xl text-sm hover:bg-green-700">Add</button>
+                  </div>
+                  {drugTags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                      {drugTags.map((d, i) => (
+                        <span key={i} className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs ${darkMode ? "bg-green-950/50 text-green-300" : "bg-green-50 text-green-700"}`}>
+                          💊 {d} <button onClick={() => setDrugTags(p => p.filter((_, j) => j !== i))}><X size={10} /></button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <button onClick={runDrugCheck} disabled={drugTags.length < 2 || drugLoading}
+                    className="px-5 py-2 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 disabled:opacity-40 flex items-center gap-2">
+                    {drugLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />} Check
+                  </button>
+                  {drugResult && (
+                    <div className={`mt-4 p-4 rounded-xl border ${darkMode ? "bg-gray-800 border-gray-700" : "bg-green-50 border-green-100"}`}>
+                      <div className="whitespace-pre-wrap text-sm leading-relaxed">{drugResult.analysis}</div>
+                      <p className={`text-[10px] mt-2 ${subtle}`}>{drugResult.disclaimer}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Mental Health */}
+              {showMentalHealth && (
+                <div className={`${card} rounded-2xl border p-5`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-bold flex items-center gap-2"><Heart size={18} className="text-purple-500" /> Mental Health</h3>
+                    <button onClick={() => { setShowMentalHealth(false); setMentalResult(null); setMentalAnswers([]); }} className={subtle}><X size={16} /></button>
+                  </div>
+                  <div className="flex gap-2 mb-4">
+                    {[["phq9", "PHQ-9 (Depression)"], ["gad7", "GAD-7 (Anxiety)"]].map(([k, l]) => (
+                      <button key={k} onClick={() => { setMentalType(k); setMentalAnswers([]); setMentalResult(null); }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium ${mentalType === k ? "bg-purple-600 text-white" : (darkMode ? "bg-gray-800" : "bg-gray-100")}`}>{l}</button>
+                    ))}
+                  </div>
+                  {!mentalResult ? (
+                    <div className="space-y-2.5">
+                      <p className={`text-xs ${subtle}`}>Over the last 2 weeks, how often have you been bothered by:</p>
+                      {mentalQuestions.map((q, i) => (
+                        <div key={i} className={`p-3 rounded-xl border ${darkMode ? "bg-gray-800 border-gray-700" : "bg-gray-50 border-gray-100"}`}>
+                          <p className="text-sm mb-2">{i + 1}. {q}</p>
+                          <div className="grid grid-cols-4 gap-1.5">
+                            {["Not at all", "Several days", "Half the days", "Nearly daily"].map((opt, val) => (
+                              <button key={val} onClick={() => { const a = [...mentalAnswers]; a[i] = val; setMentalAnswers(a); }}
+                                className={`py-1 rounded-lg text-[10px] font-medium transition-colors ${mentalAnswers[i] === val ? "bg-purple-600 text-white" : (darkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-white border hover:bg-purple-50")}`}>
+                                {opt} ({val})
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                      <button onClick={submitMentalHealth}
+                        disabled={mentalAnswers.filter(a => a !== undefined).length < mentalQuestions.length}
+                        className="px-5 py-2 bg-purple-600 text-white rounded-xl text-sm font-medium hover:bg-purple-700 disabled:opacity-40">Submit</button>
+                    </div>
+                  ) : (
+                    <div className={`p-4 rounded-xl border ${darkMode ? "bg-gray-800 border-gray-700" : "bg-purple-50 border-purple-100"}`}>
+                      <h4 className="font-bold mb-2">{mentalResult.assessment}</h4>
+                      <div className="flex items-center gap-4 mb-3">
+                        <div className="text-center">
+                          <p className="text-3xl font-bold">{mentalResult.score}</p>
+                          <p className={`text-[10px] ${subtle}`}>of {mentalResult.max_score}</p>
+                        </div>
+                        <div>
+                          <p className={`font-semibold ${mentalResult.score > 14 ? "text-red-500" : mentalResult.score > 9 ? "text-yellow-500" : "text-green-500"}`}>{mentalResult.severity}</p>
+                          <p className={`text-xs mt-1 ${subtle}`}>{mentalResult.recommendation}</p>
+                        </div>
+                      </div>
+                      <button onClick={() => { setMentalResult(null); setMentalAnswers([]); }} className="text-xs text-purple-500 hover:underline">Retake</button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── Medication Tracker ── */}
+              {showMedTracker && (
+                <div className={`${card} rounded-2xl border p-5`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-bold flex items-center gap-2"><ClipboardList size={18} className="text-amber-500" /> Medication Tracker</h3>
+                    <button onClick={() => setShowMedTracker(false)} className={subtle}><X size={16} /></button>
+                  </div>
+                  <button onClick={() => setShowMedForm(!showMedForm)} className={`text-xs px-3 py-1.5 rounded-lg font-medium mb-3 ${showMedForm ? "bg-amber-600 text-white" : (darkMode ? "bg-amber-950/40 text-amber-400" : "bg-amber-50 text-amber-600")}`}>
+                    <Plus size={12} className="inline mr-1" /> Add Medication
+                  </button>
+                  {showMedForm && (
+                    <div className={`p-3 rounded-xl border mb-3 ${darkMode ? "bg-gray-800 border-gray-700" : "bg-amber-50 border-amber-100"}`}>
+                      <div className="grid grid-cols-3 gap-2 mb-2">
+                        <input value={medForm.name} onChange={e => setMedForm(p => ({ ...p, name: e.target.value }))} placeholder="Medication name" className={`px-3 py-2 text-sm border rounded-xl ${inp}`} />
+                        <input value={medForm.dosage} onChange={e => setMedForm(p => ({ ...p, dosage: e.target.value }))} placeholder="Dosage (e.g. 500mg)" className={`px-3 py-2 text-sm border rounded-xl ${inp}`} />
+                        <select value={medForm.frequency} onChange={e => setMedForm(p => ({ ...p, frequency: e.target.value }))} className={`px-3 py-2 text-sm border rounded-xl ${inp}`}>
+                          {["Once daily", "Twice daily", "Three times daily", "As needed", "Weekly"].map(f => <option key={f}>{f}</option>)}
+                        </select>
+                      </div>
+                      <button onClick={addMedication} disabled={!medForm.name.trim()} className="px-4 py-1.5 bg-amber-600 text-white text-sm rounded-xl hover:bg-amber-700 disabled:opacity-40">Save</button>
+                    </div>
+                  )}
+                  {medications.length > 0 ? (
+                    <div className="space-y-2">
+                      {medications.map((m, i) => (
+                        <div key={i} className={`p-3 rounded-xl border flex items-center justify-between ${darkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"}`}>
+                          <div>
+                            <p className="font-semibold text-sm">{m.name} <span className={`text-xs ${subtle}`}>{m.dosage}</span></p>
+                            <p className={`text-[10px] ${subtle}`}>{m.frequency} • Started {m.start_date || "recently"}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => logMedTaken(m.id)} className="px-2.5 py-1 bg-green-600 text-white text-[10px] rounded-lg hover:bg-green-700 font-medium">
+                              <Check size={10} className="inline mr-0.5" /> Taken
+                            </button>
+                            <button onClick={() => deleteMed(m.id)} className={`p-1 rounded hover:bg-red-100 dark:hover:bg-red-950/40 ${subtle}`}><Trash2 size={12} /></button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className={`text-xs ${subtle}`}>No medications tracked yet. Add your medications to track adherence.</p>
+                  )}
+                </div>
+              )}
+
+              {/* ── AI Specialist Consultation ── */}
+              {showSpecialistPanel && (
+                <div className={`${card} rounded-2xl border p-5`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-bold flex items-center gap-2"><Stethoscope size={18} className="text-cyan-500" /> AI Specialists</h3>
+                    <button onClick={() => { setShowSpecialistPanel(false); setSelectedSpecialist(null); }} className={subtle}><X size={16} /></button>
+                  </div>
+                  <p className={`text-xs ${subtle} mb-3`}>Select a specialist to chat with. The AI will respond as that specialist.</p>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                    {specialists.map((s, i) => (
+                      <button key={i} onClick={() => { setSelectedSpecialist(s); setShowSpecialistPanel(false); setTab("chat"); }}
+                        className={`p-3 rounded-xl border text-left hover:shadow-md transition-all ${selectedSpecialist?.name === s.name ? (darkMode ? "bg-cyan-950/40 border-cyan-700" : "bg-cyan-50 border-cyan-300") : (darkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200")}`}>
+                        <span className="text-lg">{s.icon}</span>
+                        <p className="font-semibold text-sm mt-1">{s.name}</p>
+                      </button>
+                    ))}
+                  </div>
+                  {selectedSpecialist && (
+                    <div className={`mt-3 p-3 rounded-xl border ${darkMode ? "bg-cyan-950/20 border-cyan-900" : "bg-cyan-50 border-cyan-100"}`}>
+                      <p className="text-sm">Currently consulting: <span className="font-bold">{selectedSpecialist.icon} {selectedSpecialist.name}</span></p>
+                      <button onClick={() => { setShowSpecialistPanel(false); setTab("chat"); }} className="text-xs text-cyan-500 mt-1 hover:underline">Go to Chat →</button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── Smart Symptom Flow ── */}
+              {showSymptomFlow && (
+                <div className={`${card} rounded-2xl border p-5`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-bold flex items-center gap-2"><Target size={18} className="text-pink-500" /> Smart Symptom Flow</h3>
+                    <button onClick={() => { setShowSymptomFlow(false); setFlowQuestion(null); setFlowDiagnosis(null); setFlowAnswers({}); setFlowSymptom(""); setFlowSessionId(null); }} className={subtle}><X size={16} /></button>
+                  </div>
+                  {!flowQuestion && !flowDiagnosis ? (
+                    <div>
+                      <p className={`text-xs ${subtle} mb-3`}>Describe your main symptom and the AI will ask targeted follow-up questions to narrow down possible causes.</p>
+                      <div className="flex gap-2">
+                        <input value={flowSymptom} onChange={e => setFlowSymptom(e.target.value)} onKeyDown={e => { if (e.key === "Enter") startSymptomFlow(); }}
+                          placeholder="e.g. chest pain, headache, fatigue..." className={`flex-1 px-3 py-2 text-sm border rounded-xl ${inp}`} />
+                        <button onClick={startSymptomFlow} disabled={!flowSymptom.trim() || flowLoading}
+                          className="px-4 py-2 bg-pink-600 text-white text-sm rounded-xl hover:bg-pink-700 disabled:opacity-40 flex items-center gap-1">
+                          {flowLoading ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />} Start
+                        </button>
+                      </div>
+                    </div>
+                  ) : flowDiagnosis ? (
+                    <div className={`p-4 rounded-xl border ${darkMode ? "bg-gray-800 border-gray-700" : "bg-pink-50 border-pink-100"}`}>
+                      <h4 className="font-bold mb-2 flex items-center gap-2">🏥 Assessment Complete</h4>
+                      <div className="whitespace-pre-wrap text-sm leading-relaxed">{flowDiagnosis}</div>
+                      <button onClick={() => { setFlowQuestion(null); setFlowDiagnosis(null); setFlowAnswers({}); setFlowSymptom(""); setFlowSessionId(null); }}
+                        className="mt-3 text-xs text-pink-500 hover:underline">Start New Flow</button>
+                    </div>
+                  ) : (
+                    <div>
+                      <div className={`p-4 rounded-xl border mb-3 ${darkMode ? "bg-gray-800 border-gray-700" : "bg-pink-50 border-pink-100"}`}>
+                        <p className="font-medium text-sm mb-1">Question {Object.keys(flowAnswers).length + 1}</p>
+                        <p className="text-sm">{flowQuestion}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <input id="flow-answer-input" onKeyDown={e => { if (e.key === "Enter") { answerSymptomFlow(e.target.value); e.target.value = ""; } }}
+                          placeholder="Type your answer..." className={`flex-1 px-3 py-2 text-sm border rounded-xl ${inp}`} />
+                        <button onClick={() => { const inp = document.getElementById("flow-answer-input"); answerSymptomFlow(inp.value); inp.value = ""; }} disabled={flowLoading}
+                          className="px-4 py-2 bg-pink-600 text-white text-sm rounded-xl hover:bg-pink-700 disabled:opacity-40">
+                          {flowLoading ? <Loader2 size={12} className="animate-spin" /> : "Answer"}
+                        </button>
+                      </div>
+                      <p className={`text-[10px] mt-2 ${subtle}`}>Answered {Object.keys(flowAnswers).length} of ~5 questions</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── Treatment Plan ── */}
+              {showTreatmentPlan && (
+                <div className={`${card} rounded-2xl border p-5`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-bold flex items-center gap-2"><FileText size={18} className="text-violet-500" /> Treatment Plan Generator</h3>
+                    <button onClick={() => { setShowTreatmentPlan(false); setTreatmentResult(null); }} className={subtle}><X size={16} /></button>
+                  </div>
+                  <p className={`text-xs ${subtle} mb-3`}>Enter a condition or diagnosis and the AI will generate a personalized treatment plan based on your health data.</p>
+                  <div className="flex gap-2 mb-3">
+                    <input value={treatmentCondition} onChange={e => setTreatmentCondition(e.target.value)} onKeyDown={e => { if (e.key === "Enter") generateTreatmentPlan(); }}
+                      placeholder="e.g. Type 2 Diabetes, Hypertension, GERD..." className={`flex-1 px-3 py-2 text-sm border rounded-xl ${inp}`} />
+                    <button onClick={generateTreatmentPlan} disabled={!treatmentCondition.trim() || treatmentLoading}
+                      className="px-4 py-2 bg-violet-600 text-white text-sm rounded-xl hover:bg-violet-700 disabled:opacity-40 flex items-center gap-1">
+                      {treatmentLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} Generate
+                    </button>
+                  </div>
+                  {treatmentResult && (
+                    <div className={`p-4 rounded-xl border ${darkMode ? "bg-gray-800 border-gray-700" : "bg-violet-50 border-violet-100"}`}>
+                      <div className="whitespace-pre-wrap text-sm leading-relaxed">{treatmentResult.plan || treatmentResult}</div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── Health Coach ── */}
+              {showCoachPanel && (
+                <div className={`${card} rounded-2xl border p-5`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-bold flex items-center gap-2"><Sparkles size={18} className="text-emerald-500" /> AI Health Coach</h3>
+                    <button onClick={() => setShowCoachPanel(false)} className={subtle}><X size={16} /></button>
+                  </div>
+                  <button onClick={loadCoachBriefing} disabled={coachLoading}
+                    className={`text-xs px-3 py-1.5 rounded-lg font-medium mb-3 ${darkMode ? "bg-emerald-950/40 text-emerald-400" : "bg-emerald-50 text-emerald-600"}`}>
+                    {coachLoading ? <Loader2 size={12} className="animate-spin inline mr-1" /> : <Sparkles size={12} className="inline mr-1" />} Get Today&apos;s Briefing
+                  </button>
+                  {coachBriefing ? (
+                    <div className={`p-4 rounded-xl border ${darkMode ? "bg-gray-800 border-gray-700" : "bg-emerald-50 border-emerald-100"}`}>
+                      <div className="whitespace-pre-wrap text-sm leading-relaxed">{coachBriefing.briefing || coachBriefing}</div>
+                    </div>
+                  ) : (
+                    <p className={`text-xs ${subtle}`}>Your AI Health Coach provides daily personalized health insights, tips, and action items based on your health data.</p>
+                  )}
+                </div>
+              )}
+
+              {/* ── Screening Planner ── */}
+              {showScreeningPanel && (
+                <div className={`${card} rounded-2xl border p-5`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-bold flex items-center gap-2"><Calendar size={18} className="text-orange-500" /> Preventive Screening Planner</h3>
+                    <button onClick={() => setShowScreeningPanel(false)} className={subtle}><X size={16} /></button>
+                  </div>
+                  <button onClick={loadScreeningPlan} disabled={screeningLoading}
+                    className={`text-xs px-3 py-1.5 rounded-lg font-medium mb-3 ${darkMode ? "bg-orange-950/40 text-orange-400" : "bg-orange-50 text-orange-600"}`}>
+                    {screeningLoading ? <Loader2 size={12} className="animate-spin inline mr-1" /> : <Calendar size={12} className="inline mr-1" />} Generate Plan
+                  </button>
+                  {screeningPlan?.screenings?.length > 0 ? (
+                    <div className="space-y-2">
+                      {screeningPlan.screenings.map((s, i) => (
+                        <div key={i} className={`p-3 rounded-xl border flex items-start gap-3 ${s.done ? (darkMode ? "bg-green-950/20 border-green-900/50" : "bg-green-50 border-green-100") : (darkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200")}`}>
+                          <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${s.done ? "bg-green-500 text-white" : (darkMode ? "bg-gray-700" : "bg-gray-200")}`}>
+                            {s.done ? <Check size={10} /> : <span className="text-[10px]">{i + 1}</span>}
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold">{s.test_name}</p>
+                            <p className={`text-[10px] ${subtle}`}>{s.description} • {s.frequency}</p>
+                            {s.last_done && <p className="text-[10px] text-green-500">Last: {s.last_done}</p>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : screeningPlan ? (
+                    <p className={`text-xs ${subtle}`}>Set your age and gender in Profile to get personalized screening recommendations.</p>
+                  ) : (
+                    <p className={`text-xs ${subtle}`}>Get age and gender-appropriate preventive health screening recommendations.</p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ══════ REPORTS TAB ══════ */}
+        {tab === "reports" && (
+          <div className="flex-1 overflow-auto p-4 md:p-6">
+            <div className="max-w-3xl mx-auto space-y-5">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <h2 className="text-lg font-bold">Reports & Records</h2>
+                <div className="flex gap-2">
+                  <button onClick={() => setShowLabEntry(!showLabEntry)} className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-medium ${showLabEntry ? "bg-green-600 text-white" : (darkMode ? "bg-green-950/40 text-green-400 hover:bg-green-950/60" : "bg-green-50 text-green-600 hover:bg-green-100")}`}>
+                    <Plus size={12} /> Add Lab Value
+                  </button>
+                  <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700">
+                    <Upload size={12} /> Upload Report
+                    <input type="file" accept="image/*,.pdf" onChange={handleReportUpload} className="hidden" />
+                  </label>
+                  <button onClick={generateReport} disabled={reportLoading}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-xs rounded-lg hover:bg-indigo-700">
+                    {reportLoading ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />} AI Report
+                  </button>
+                </div>
+              </div>
+
+              {/* ── Manual Lab Entry Form ── */}
+              {showLabEntry && (
+                <div className={`${card} rounded-2xl border p-5`}>
+                  <h3 className="font-bold text-sm mb-3 flex items-center gap-2">➕ Add Lab Value Manually</h3>
+                  <div className="space-y-3">
+                    {/* Autocomplete search */}
+                    <div className="relative">
+                      <input value={labSearch} onChange={e => handleLabSearch(e.target.value)} placeholder="Search test name (e.g. hemoglobin, glucose, TSH...)"
+                        className={`w-full px-3 py-2 text-sm border rounded-xl ${inp}`} />
+                      {labSuggestions.length > 0 && (
+                        <div className={`absolute z-20 mt-1 w-full rounded-xl border shadow-lg max-h-56 overflow-auto ${darkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"}`}>
+                          {labSuggestions.map((t, i) => (
+                            <button key={i} onClick={() => selectLabTest(t)} className={`w-full text-left px-3 py-2 text-sm hover:${darkMode ? "bg-gray-700" : "bg-blue-50"} flex items-center justify-between border-b last:border-0 ${darkMode ? "border-gray-700" : "border-gray-100"}`}>
+                              <div>
+                                <span className="font-medium">{t.display}</span>
+                                <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded ${darkMode ? "bg-gray-700" : "bg-gray-100"} ${subtle}`}>{t.category}</span>
+                              </div>
+                              <span className={`text-[10px] ${subtle}`}>{t.normal_range} {t.unit}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {/* Selected test info */}
+                    {selectedLabTest && (
+                      <div className={`p-3 rounded-xl border ${darkMode ? "bg-gray-800 border-gray-700" : "bg-blue-50 border-blue-100"}`}>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-semibold text-sm">{selectedLabTest.display}</p>
+                            <p className={`text-xs ${subtle}`}>{selectedLabTest.category}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm">Normal: <span className="font-bold text-green-500">{selectedLabTest.normal_range}</span> {selectedLabTest.unit}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {/* Value + Date */}
+                    <div className="flex gap-2">
+                      <input value={labValue} onChange={e => setLabValue(e.target.value)} placeholder={`Value${selectedLabTest ? ` (${selectedLabTest.unit})` : ""}`}
+                        className={`flex-1 px-3 py-2 text-sm border rounded-xl ${inp}`} onKeyDown={e => { if (e.key === "Enter") submitLabEntry(); }} />
+                      <input type="date" value={labDate} onChange={e => setLabDate(e.target.value)} className={`px-3 py-2 text-sm border rounded-xl ${inp}`} />
+                      <button onClick={submitLabEntry} disabled={!selectedLabTest || !labValue.trim()}
+                        className="px-4 py-2 bg-green-600 text-white text-sm rounded-xl hover:bg-green-700 disabled:opacity-40 font-medium">Save</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {reportData && (
+                <div className={`${card} rounded-2xl border p-5`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <h3 className="font-bold">AI Health Report</h3>
+                      <p className={`text-[10px] ${subtle}`}>{new Date(reportData.generated_at).toLocaleString()} • ID: {reportData.report_id}</p>
+                    </div>
+                    <button onClick={() => window.print()} className={`px-2.5 py-1 rounded-lg text-xs ${darkMode ? "bg-gray-800" : "bg-gray-100"}`}>
+                      <Download size={11} />
+                    </button>
+                  </div>
+                  <div className={`p-4 rounded-xl border ${darkMode ? "bg-gray-800 border-gray-700" : "bg-indigo-50 border-indigo-100"}`}>
+                    <div className="whitespace-pre-wrap text-sm leading-relaxed">{reportData.ai_summary}</div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Lab Intelligence (cross-test) ── */}
+              <div className={`${card} rounded-2xl border p-5`}>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-sm flex items-center gap-2">🧬 Lab Intelligence</h3>
+                  <button onClick={loadLabIntelligence} disabled={labIntelLoading}
+                    className={`text-xs px-3 py-1 rounded-lg font-medium ${darkMode ? "bg-purple-950/50 text-purple-400" : "bg-purple-50 text-purple-600"}`}>
+                    {labIntelLoading ? <Loader2 size={12} className="animate-spin" /> : "Analyze"}
+                  </button>
+                </div>
+                {labIntel?.findings?.length > 0 ? (
+                  <div className="space-y-2">
+                    {labIntel.findings.map((f, i) => (
+                      <div key={i} className={`p-3 rounded-xl border ${f.severity === "high" ? (darkMode ? "bg-red-950/30 border-red-900" : "bg-red-50 border-red-200") : f.severity === "medium" ? (darkMode ? "bg-yellow-950/30 border-yellow-900" : "bg-yellow-50 border-yellow-200") : (darkMode ? "bg-blue-950/30 border-blue-900" : "bg-blue-50 border-blue-200")}`}>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${f.severity === "high" ? "bg-red-600 text-white" : f.severity === "medium" ? "bg-yellow-600 text-white" : "bg-blue-600 text-white"}`}>{f.severity}</span>
+                          <span className="font-semibold text-sm">{f.name}</span>
+                        </div>
+                        <p className="text-xs mb-1">{f.message}</p>
+                        <p className={`text-xs ${subtle}`}>→ {f.recommendation}</p>
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {f.triggered_tests?.map((t, j) => <span key={j} className={`text-[10px] px-1.5 py-0.5 rounded ${darkMode ? "bg-gray-800" : "bg-white"}`}>{t}</span>)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : labIntel ? (
+                  <p className={`text-xs ${subtle}`}>No cross-test patterns detected. All within normal correlation ranges.</p>
+                ) : (
+                  <p className={`text-xs ${subtle}`}>Click Analyze to detect metabolic syndrome, anemia, liver stress, and other patterns from your lab data.</p>
+                )}
+              </div>
+
+              {/* ── Trends ── */}
+              <div className={`${card} rounded-2xl border p-5`}>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-sm flex items-center gap-2">📈 Lab Trends</h3>
+                  <button onClick={loadTrends} disabled={trendsLoading}
+                    className={`text-xs px-3 py-1 rounded-lg font-medium ${darkMode ? "bg-cyan-950/50 text-cyan-400" : "bg-cyan-50 text-cyan-600"}`}>
+                    {trendsLoading ? <Loader2 size={12} className="animate-spin" /> : "Detect Trends"}
+                  </button>
+                </div>
+                {trendsData?.trends?.length > 0 ? (
+                  <div className="space-y-2">
+                    {trendsData.trends.map((t, i) => (
+                      <div key={i} className={`p-3 rounded-xl border ${t.is_concerning ? (darkMode ? "bg-red-950/20 border-red-900" : "bg-red-50 border-red-200") : (darkMode ? "bg-gray-800 border-gray-700" : "bg-gray-50 border-gray-200")}`}>
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-sm">{t.display}</span>
+                          <span className={`text-xs font-bold ${t.direction === "increasing" ? "text-red-500" : t.direction === "decreasing" ? "text-blue-500" : "text-green-500"}`}>
+                            {t.direction === "increasing" ? "↑" : t.direction === "decreasing" ? "↓" : "→"} {Math.abs(t.change_pct)}%
+                          </span>
+                        </div>
+                        <div className="flex gap-3 mt-1">
+                          {t.data_points?.map((p, j) => (
+                            <span key={j} className={`text-[10px] ${subtle}`}>{p.date?.slice(5)}: <span className="font-medium">{p.value}</span></span>
+                          ))}
+                        </div>
+                        <p className={`text-[10px] mt-1 ${subtle}`}>Normal: {t.normal_range}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : trendsData ? (
+                  <p className={`text-xs ${subtle}`}>Not enough data points to detect trends. Add more lab results over time.</p>
+                ) : (
+                  <p className={`text-xs ${subtle}`}>Analyzes your lab history to detect increasing/decreasing trends and anomalies.</p>
+                )}
+              </div>
+
+              {/* ── Lab Results Table ── */}
+              {labResults.length > 0 ? (
+                <div className={`${card} rounded-2xl border overflow-hidden`}>
+                  <div className={`px-5 py-3 border-b flex items-center justify-between ${darkMode ? "border-gray-800" : "border-gray-100"}`}>
+                    <h3 className={`text-sm font-semibold uppercase tracking-wider ${subtle}`}>Lab Results</h3>
+                    <span className={`text-xs ${subtle}`}>{labResults.length} values</span>
+                  </div>
+                  <div className="max-h-[500px] overflow-auto">
+                    <table className="w-full text-sm">
+                      <thead className={`sticky top-0 ${darkMode ? "bg-gray-800" : "bg-gray-50"}`}>
+                        <tr>{["Test", "Value", "Normal", "Status", "Date", ""].map(h => <th key={h} className={`px-4 py-2 text-left text-[10px] font-semibold uppercase ${subtle}`}>{h}</th>)}</tr>
+                      </thead>
+                      <tbody className={`divide-y ${darkMode ? "divide-gray-800" : "divide-gray-50"}`}>
+                        {labResults.map((r, i) => (
+                          <tr key={i}>
+                            <td className="px-4 py-2 font-medium capitalize">{(r.test_name || "").replace(/_/g, " ")}</td>
+                            <td className="px-4 py-2">{r.value} {r.unit || ""}</td>
+                            <td className={`px-4 py-2 ${subtle}`}>{r.normal_range || "—"}</td>
+                            <td className="px-4 py-2">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${r.status === "normal" ? (darkMode ? "bg-green-950/50 text-green-400" : "bg-green-50 text-green-700") : r.status === "high" || r.status === "abnormal" ? (darkMode ? "bg-red-950/50 text-red-400" : "bg-red-50 text-red-700") : r.status === "noted" ? (darkMode ? "bg-blue-950/50 text-blue-400" : "bg-blue-50 text-blue-700") : (darkMode ? "bg-yellow-950/50 text-yellow-400" : "bg-yellow-50 text-yellow-700")}`}>{r.status || "—"}</span>
+                            </td>
+                            <td className={`px-4 py-2 text-xs ${subtle}`}>{r.date}</td>
+                            <td className="px-4 py-1">
+                              <button onClick={() => deleteLabResult(r.id)} className={`p-1 rounded hover:bg-red-100 dark:hover:bg-red-950/40 ${subtle}`} title="Delete"><Trash2 size={12} /></button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className={`text-center py-10 ${subtle}`}>
+                  <FileText size={32} className="mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">No lab reports yet. Upload a report or add values manually.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

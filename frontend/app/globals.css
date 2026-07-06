@@ -1,0 +1,163 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f5f6fa;
+  --foreground: #0f172a;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0b0f;
+    --foreground: #f1f5f9;
+  }
+}
+
+* {
+  scroll-behavior: smooth;
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c8ccd4;
+  border-radius: 100px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.anim-fade {
+  animation: fadeIn 0.25s ease-out both;
+}
+
+.anim-slide {
+  animation: slideUp 0.3s ease-out both;
+}
+
+.stagger>* {
+  animation: fadeIn 0.3s ease-out both;
+}
+
+.stagger>*:nth-child(1) {
+  animation-delay: 0ms;
+}
+
+.stagger>*:nth-child(2) {
+  animation-delay: 40ms;
+}
+
+.stagger>*:nth-child(3) {
+  animation-delay: 80ms;
+}
+
+.stagger>*:nth-child(4) {
+  animation-delay: 120ms;
+}
+
+.stagger>*:nth-child(5) {
+  animation-delay: 160ms;
+}
+
+.stagger>*:nth-child(6) {
+  animation-delay: 200ms;
+}
+
+.stagger>*:nth-child(7) {
+  animation-delay: 240ms;
+}
+
+.stagger>*:nth-child(8) {
+  animation-delay: 280ms;
+}
+
+.stagger>*:nth-child(9) {
+  animation-delay: 320ms;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ════════════════════════════════════════
+   DATA TABLE STYLES
+   NOTE: Backgrounds and colors are intentionally NOT set here.
+   They are controlled by the dynamic theme injected via injectGlobalStyles()
+   in the component. Setting hardcoded colors here breaks dark mode.
+════════════════════════════════════════ */
+.ma-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+}
+
+.ma-table th {
+  padding: 10px 20px;
+  text-align: left;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  /* color and background set by injected theme styles */
+}
+
+.ma-table td {
+  padding: 11px 20px;
+  font-size: 13.5px;
+  /* color, background, border set by injected theme styles */
+}
+
+.ma-table tbody tr {
+  transition: background 0.12s ease;
+}
+
+/* ════════════════════════════════════════
+   SCROLLING ENHANCEMENTS
+════════════════════════════════════════ */
+.smooth-scroll-container {
+  scroll-behavior: smooth;
+  overscroll-behavior-y: contain;
+  will-change: scroll-position;
+}
