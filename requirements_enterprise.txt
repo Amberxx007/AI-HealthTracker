@@ -1,0 +1,59 @@
+# Core Framework
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+python-multipart==0.0.9
+websockets==12.0
+pydantic==2.6.1
+
+# AI Models
+torch==2.1.2
+transformers==4.37.2
+faster-whisper>=1.0.0
+sentence-transformers==2.3.1
+
+# Vision
+Pillow==10.2.0
+
+# TTS & Language Detection
+edge-tts>=6.1.0
+langdetect==1.0.9
+
+# Database
+sqlalchemy==2.0.25
+
+# Encryption
+cryptography>=41.0.0
+
+# Audio Processing
+sounddevice==0.4.6
+scipy==1.12.0
+
+# OCR
+easyocr==1.7.2
+
+# Biomedical NER (scispaCy)
+scispacy==0.6.2
+# Models installed separately:
+#   pip install https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.4/en_ner_bc5cdr_md-0.5.4.tar.gz
+#   pip install https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.4/en_core_sci_sm-0.5.4.tar.gz
+
+# RAG / Vector Search
+faiss-cpu==1.7.4
+
+# Utilities
+python-dotenv==1.0.1
+aiofiles==23.2.1
+requests==2.31.0
+numpy==1.26.4
+httpx==0.27.0
+
+# Development
+pytest==7.4.4
+pytest-asyncio==0.23.4
+
+# Security & Authentication
+PyJWT==2.8.0
+passlib==1.7.4
+bcrypt==4.1.2
+slowapi==0.1.9
+gunicorn==21.2.0

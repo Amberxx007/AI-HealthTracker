@@ -1,0 +1,31 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        curl \
+        ffmpeg \
+        libgl1 \
+        libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements_enterprise.txt /app/requirements_enterprise.txt
+RUN pip install --upgrade pip \
+    && pip install -r /app/requirements_enterprise.txt
+
+COPY . /app
+
+RUN mkdir -p /app/data /app/static/audio /app/static/images /app/logs
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD curl --fail http://localhost:8000/api/health || exit 1
+
+CMD ["sh", "-c", "gunicorn enhanced_api:app -k uvicorn.workers.UvicornWorker -w ${WEB_CONCURRENCY:-2} --bind 0.0.0.0:8000 --access-logfile - --error-logfile -"]

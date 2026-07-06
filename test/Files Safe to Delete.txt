@@ -1,0 +1,31 @@
+🗑️ Files Safe to Delete
+🔴 High Priority (Large / Completely Unused)
+Path	Size	Reason
+speech/whisper.cpp/	~500MB+	Entire whisper.cpp source repo cloned inside your project. You already use a separate whisper pipeline via services_voice_processor.py. This is dead weight.
+old_phase/ (8 files)	~8 KB	Legacy code (doctor_api.py, voice_api.py, etc.) from an earlier version. Fully replaced by enhanced_api.py + services.
+__pycache__/	~125 KB	Stale bytecode from old_phase files. Python regenerates these automatically.
+static/index.html + script.js + style.css	~5 KB	Old HTML/CSS/JS frontend — fully replaced by your Next.js frontend.
+frontend/components/frontend_EnhancedMedicalChat.jsx.bak	197 KB	Backup of your main component. You have git, so this is redundant.
+test/Screenshot *.png (4 files)	~1.1 MB	Screenshots from testing sessions. Not used by any code.
+test/Test_*.pdf + Test_reportNONtext.pdf	~6.9 MB	Test PDFs — useful during dev but not needed in production.
+test/test_image.jpg	20 KB	Test image — not used by any code.
+🟡 Medium Priority (Generated/Cached Data — Can Regenerate)
+Path	Size	Reason
+static/audio/ (31 WAV/MP3 files)	~30+ MB	TTS output and voice test recordings. All generated/temporary. Safe to clear periodically.
+static/images/ (38 JPG files)	~35+ MB	Patient-uploaded images (test data). Can clear test data, keep the empty folder.
+logs/ (7 log files)	~360 KB	Old log files. Keep today's, delete older ones.
+data/conversations/medical_ai.db	57 KB	Old conversation DB — your main DB is data/health_records.db.
+patient_memory/ (2 JSON files)	~12 KB	Legacy memory files. Your DB now stores patient context.
+frontend/.next/	Variable	Next.js build cache — auto-regenerated on npm run dev.
+🟢 Keep These
+Path	Reason
+data/health_records.db + WAL/SHM	Your active database with patient records
+data/medical_knowledge/	RAG index + medical conditions JSON
+models/embeddings/	Sentence transformer model for RAG
+services/ (all .py files)	Core backend services
+frontend/ (except .bak and .next/)	Active Next.js app
+test/test_*.py files	Useful test scripts (keep)
+enhanced_api.py	Main API
+start_all.bat	Startup script
+.vscode/	Editor settings
+requirements_enterprise.txt	Dependencies

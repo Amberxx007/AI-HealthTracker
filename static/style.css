@@ -1,0 +1,86 @@
+body {
+    background: #f2f2f2;
+    font-family: Arial, sans-serif;
+}
+
+.chat-container {
+    width: 400px;
+    margin: auto;
+    background: white;
+    padding: 15px;
+    border-radius: 10px;
+}
+
+#chat {
+    height: 350px;
+    overflow-y: auto;
+    margin-bottom: 10px;
+}
+
+.user {
+    background: #d1e7ff;
+    padding: 8px;
+    border-radius: 8px;
+    margin: 5px 0;
+    text-align: right;
+}
+
+.bot {
+    background: #e6ffe6;
+    padding: 8px;
+    border-radius: 8px;
+    margin: 5px 0;
+}
+
+textarea {
+    width: 100%;
+    height: 50px;
+}
+
+button {
+    width: 100%;
+    margin-top: 5px;
+    padding: 8px;
+}
+button:hover {
+    background-color: #007BFF;
+    color: white;
+    cursor: pointer;
+}
+.bars {
+  display: flex;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.bars div {
+  width: 5px;
+  height: 10px;
+  background: green;
+  animation: pulse 0.6s infinite alternate;
+}
+
+.hidden {
+  display: none;
+}
+
+@keyframes pulse {
+  from { height: 5px; }
+  to { height: 25px; }
+}
+.bars div:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.hidden { display: none; }
+
+#micBars {
+  font-size: 20px;
+  color: red;
+  animation: blink 1s infinite;
+}
+
+@keyframes blink {
+  0% { opacity: 0.3; }
+  50% { opacity: 1; }
+  100% { opacity: 0.3; }
+}

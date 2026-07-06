@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Doctor v3</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="chat-container">
+    <h2>🩺 AI Doctor v3</h2>
+
+<input id="pid" value="amber_01" placeholder="Patient ID">
+
+<div id="chat"></div>
+
+<textarea id="symptoms"></textarea>
+<button onclick="analyzeText(symptoms.value)">Send</button>
+<button onclick="startVoice()">🎤</button>
+
+<div id="bars" style="display:none">▮ ▮ ▮ ▮ ▮</div>
+<div id="micBars" class="bars hidden">
+  <div></div><div></div><div></div><div></div>
+</div>
+
+<script src="script.js"></script>
+
+</body>
+</html>
