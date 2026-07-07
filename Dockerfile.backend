@@ -25,8 +25,8 @@ RUN mkdir -p /app/data /app/static/audio /app/static/images /app/logs
 
 EXPOSE 8000
 
-# Simple health check - just verify app is running  
+# Health check: just verify TCP port is listening (don't make HTTP request)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-  CMD curl -f http://localhost:8000/status || exit 1
+  CMD bash -c 'exec 3<>/dev/tcp/127.0.0.1/${PORT:-8000}' || exit 1
 
-CMD ["sh", "-c", "python -m uvicorn enhanced_api:app --host 0.0.0.0 --port 8000 --log-level info"]
+CMD ["sh", "-c", "python -m uvicorn enhanced_api:app --host 0.0.0.0 --port ${PORT:-8000} --log-level info"]
