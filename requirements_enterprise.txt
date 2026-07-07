@@ -27,20 +27,16 @@ sqlalchemy==2.0.25
 cryptography>=43.0.0
 
 # Audio Processing
-sounddevice==0.4.6
-# scipy removed - requires Fortran compiler on Render
+# sounddevice removed - doesn't support Python 3.14
+# To use locally: pip install sounddevice
 
 # Biomedical NER (scispaCy)
-# Removed - requires Python <3.13, not compatible with modern versions on Render
+# Removed - requires compilation on Render
 # To use locally: pip install scispacy
-# Models: https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.4/
 
 # RAG / Vector Search
-faiss-cpu==1.7.4
-
-# OCR
-# easyocr removed - requires compilation on Render
-# To use locally: pip install easyocr
+# faiss-cpu removed - version 1.7.4 not available for Python 3.14
+# To use locally: pip install faiss-cpu==1.14.3
 
 # Utilities
 python-dotenv==1.0.1
