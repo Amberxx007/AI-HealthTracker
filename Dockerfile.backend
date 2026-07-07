@@ -25,9 +25,8 @@ RUN mkdir -p /app/data /app/static/audio /app/static/images /app/logs
 
 EXPOSE 8000
 
-# HEALTHCHECK temporarily disabled - debugging 502 errors
-# HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-#   CMD curl --fail http://localhost:8000/api/health || exit 1
+# Simple health check - just verify app is running  
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD curl -f http://localhost:8000/status || exit 1
 
-# Use simple uvicorn instead of gunicorn + uvicorn workers (causes 502 on Railway)
-CMD ["python", "-m", "uvicorn", "enhanced_api:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+CMD ["sh", "-c", "python -m uvicorn enhanced_api:app --host 0.0.0.0 --port 8000 --log-level info"]
