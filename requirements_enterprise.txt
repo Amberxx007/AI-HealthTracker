@@ -35,8 +35,7 @@ cryptography>=43.0.0
 # To use locally: pip install scispacy
 
 # RAG / Vector Search
-# faiss-cpu removed - version 1.7.4 not available for Python 3.14
-# To use locally: pip install faiss-cpu==1.14.3
+faiss-cpu==1.8.0
 
 # Utilities
 python-dotenv==1.0.1
