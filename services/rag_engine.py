@@ -9,10 +9,17 @@ with every query result so the LLM can cite them.
 import json
 import os
 import numpy as np
-import faiss
 from pathlib import Path
 from typing import List, Dict, Optional
 from utils.utils_logger import setup_logger
+
+# Lazy import to avoid startup crash if faiss is not available
+try:
+    import faiss
+    HAS_FAISS = True
+except ImportError:
+    HAS_FAISS = False
+    logger = None  # Will be set after setup_logger below
 
 logger = setup_logger(__name__)
 
@@ -165,6 +172,10 @@ class MedicalRAGEngine:
 
     def _build_index(self):
         """Build FAISS index from medical knowledge"""
+        if not HAS_FAISS:
+            logger.warning("FAISS not available; RAG engine disabled")
+            return
+        
         raw_docs = self._load_knowledge()
         if not raw_docs:
             logger.warning("No medical knowledge documents found")
@@ -189,6 +200,10 @@ class MedicalRAGEngine:
 
     def _load_index(self):
         """Load pre-built FAISS index"""
+        if not HAS_FAISS:
+            logger.warning("FAISS not available; RAG engine disabled")
+            return
+        
         self.index = faiss.read_index(self.index_path)
         with open(self.docs_path, "r", encoding="utf-8") as f:
             self.documents = json.load(f)
