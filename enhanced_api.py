@@ -184,6 +184,11 @@ from services.auth import SECRET_KEY, ALGORITHM
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
+    
+    # Allow OPTIONS (preflight) requests to pass through for CORS
+    if request.method == "OPTIONS":
+        return await call_next(request)
+    
     # Public routes
     if not path.startswith("/api/") or path.startswith("/api/auth/") or path.startswith("/api/health") or path.startswith("/api/model-providers") or path.startswith("/api/lab-catalog") or path.startswith("/api/medicine-catalog") or path.startswith("/api/specialists"):
         return await call_next(request)
