@@ -468,14 +468,14 @@ async def get_model_providers():
 
 @app.post("/api/chat/stream")
 @limiter.limit("10/minute")
-async def chat_stream(request: ChatRequest, http_request: Request):
+async def chat_stream(chat_request: ChatRequest, request: Request):
     """Streaming chat with RAG + triage + patient context.
 
     OPTIMIZED PIPELINE: triage, RAG, patient context, conversation
     history, and patient data are all fetched in PARALLEL via
     asyncio.gather() — cutting pre-LLM latency by ~60-70%.
     """
-    if hasattr(http_request.state, "user_id") and request.patient_id != http_request.state.user_id:
+    if hasattr(request.state, "user_id") and chat_request.patient_id != request.state.user_id:
         raise HTTPException(status_code=403, detail="Forbidden")
     session_id = request.session_id or str(uuid.uuid4())
     patient_id = request.patient_id
@@ -517,11 +517,11 @@ async def chat_stream(request: ChatRequest, http_request: Request):
             "4. Stay calm and follow operator instructions\n\n"
             "This AI cannot replace emergency medical services."
         )
-        db.save_message(patient_id, session_id, "user", request.message, detected_lang)
+        db.save_message(patient_id, session_id, "user", chat_request.message, detected_lang)
         db.save_message(patient_id, session_id, "assistant", emergency_text, "en",
                         metadata={"emergency": True, "triage": triage_result})
         db.add_health_event(patient_id, "emergency", triage_result["reason"],
-                            request.message, severity="critical")
+                            chat_request.message, severity="critical")
 
         async def _em():
             yield f"data: {json.dumps({'type':'triage','level':'emergency','reason':triage_result['reason']})}\n\n"
@@ -573,7 +573,7 @@ async def chat_stream(request: ChatRequest, http_request: Request):
         try:
             yield f"data: {json.dumps({'type':'triage','level':triage_result['level'],'reason':triage_result['reason']})}\n\n"
 
-            mode = getattr(request, 'generation_mode', 'balanced') or 'balanced'
+            mode = getattr(chat_request, 'generation_mode', 'balanced') or 'balanced'
             mode_tokens = {"fast": 500, "balanced": 1000, "detailed": 1800}
             mode_temp = {"fast": 0.2, "balanced": 0.3, "detailed": 0.45}
             mode_ctx = {
@@ -610,12 +610,12 @@ async def chat_stream(request: ChatRequest, http_request: Request):
             extra_with_mode = extra + mode_ctx.get(mode, "")
 
             # Route to cloud or core model
-            provider = getattr(request, 'model_provider', 'core') or 'core'
+            provider = getattr(chat_request, 'model_provider', 'core') or 'core'
             if provider != "core" and provider in ("openai", "gemini", "anthropic"):
                 # Cloud model streaming
                 async for token in cloud_engine.generate_response_stream(
                     provider=provider,
-                    message=request.message,
+                    message=chat_request.message,
                     history=history,
                     patient_id=patient_id,
                     extra_context=extra_with_mode,
@@ -627,7 +627,7 @@ async def chat_stream(request: ChatRequest, http_request: Request):
             else:
                 # Core local Llama model
                 async for token in llm_engine.generate_response_stream(
-                    message=request.message,
+                    message=chat_request.message,
                     history=history,
                     patient_id=patient_id,
                     extra_context=extra_with_mode,
@@ -653,17 +653,17 @@ async def chat_stream(request: ChatRequest, http_request: Request):
                 full = re.sub(r'^[\s{}]*(?:\{[^}]*"name"\s*:[^}]*\}[\s{}]*)*', '', full)
                 full = full.lstrip('\t\n{}')
 
-            db.save_message(patient_id, session_id, "user", request.message, detected_lang)
+            db.save_message(patient_id, session_id, "user", chat_request.message, detected_lang)
             db.save_message(patient_id, session_id, "assistant", full, detected_lang,
                             metadata={"triage": triage_result})
 
             if len(history) == 0:
-                summary = request.message[:40].strip() + ("..." if len(request.message) > 40 else "")
+                summary = chat_request.message[:40].strip() + ("..." if len(chat_request.message) > 40 else "")
                 db.update_session(session_id, summary=summary)
 
             if triage_result["level"] in ("urgent", "moderate"):
                 db.add_health_event(patient_id, "symptom_report", triage_result["reason"],
-                                    request.message[:500], severity=triage_result["level"])
+                                    chat_request.message[:500], severity=triage_result["level"])
 
             yield f"data: {json.dumps({'type':'done','session_id':session_id,'language':detected_lang,'triage':triage_result,'citations':citations})}\n\n"
             yield "data: [DONE]\n\n"
@@ -681,19 +681,19 @@ async def chat_stream(request: ChatRequest, http_request: Request):
 
 @app.post("/api/chat")
 @limiter.limit("10/minute")
-async def chat_endpoint(request: ChatRequest, http_request: Request):
+async def chat_endpoint(chat_request: ChatRequest, request: Request):
     """Non-streaming chat (used by voice pipeline).
     OPTIMIZED: parallel pre-fetch like streaming endpoint."""
-    if hasattr(http_request.state, "user_id") and request.patient_id != http_request.state.user_id:
+    if hasattr(request.state, "user_id") and chat_request.patient_id != request.state.user_id:
         raise HTTPException(status_code=403, detail="Forbidden")
-    session_id = request.session_id or str(uuid.uuid4())
-    patient_id = request.patient_id
+    session_id = chat_request.session_id or str(uuid.uuid4())
+    patient_id = chat_request.patient_id
     db.ensure_patient(patient_id)
 
     detected_lang = (
-        translation_service.detect_language(request.message)
-        if request.language == "auto"
-        else request.language
+        translation_service.detect_language(chat_request.message)
+        if chat_request.language == "auto"
+        else chat_request.language
     )
 
     # ══ PARALLEL PRE-FETCH ══════════════════════════════════════
@@ -705,9 +705,9 @@ async def chat_endpoint(request: ChatRequest, http_request: Request):
         patient_data,
         history,
     ) = await asyncio.gather(
-        _async_triage(request.message),
-        _async_rag_context(request.message, top_k=3),
-        _async_rag_citations(request.message, top_k=3),
+        _async_triage(chat_request.message),
+        _async_rag_context(chat_request.message, top_k=3),
+        _async_rag_citations(chat_request.message, top_k=3),
         _async_patient_context(patient_id),
         _async_patient_data(patient_id),
         _async_conversation(patient_id, session_id, limit=10),
@@ -716,7 +716,7 @@ async def chat_endpoint(request: ChatRequest, http_request: Request):
 
     if triage_result["level"] == "emergency":
         txt = f"🚨 EMERGENCY: {triage_result['reason']}\n{triage_result['recommendation']}\nCall 112 immediately."
-        db.save_message(patient_id, session_id, "user", request.message, detected_lang)
+        db.save_message(patient_id, session_id, "user", chat_request.message, detected_lang)
         db.save_message(patient_id, session_id, "assistant", txt, "en")
         return {"response_text": txt, "session_id": session_id, "language": detected_lang,
                 "emergency": True, "triage": triage_result,
@@ -794,13 +794,13 @@ async def chat_endpoint(request: ChatRequest, http_request: Request):
 @app.post("/api/voice/chat")
 @limiter.limit("5/minute")
 async def voice_chat(
-    http_request: Request,
+    request: Request,
     audio: UploadFile = File(...),
     patient_id: str = Form(...),
     session_id: Optional[str] = Form(None),
     language: Optional[str] = Form(None),
 ):
-    if hasattr(http_request.state, "user_id") and patient_id != http_request.state.user_id:
+    if hasattr(request.state, "user_id") and patient_id != request.state.user_id:
         raise HTTPException(status_code=403, detail="Forbidden")
     session_id = session_id or str(uuid.uuid4())
     audio_bytes = await audio.read()
@@ -832,7 +832,7 @@ async def voice_chat(
 @app.post("/api/image/analyze")
 @limiter.limit("5/minute")
 async def analyze_image(
-    http_request: Request,
+    request: Request,
     image: UploadFile = File(...),
     patient_id: str = Form(...),
     body_region: Optional[str] = Form(None),
@@ -840,7 +840,7 @@ async def analyze_image(
     description: Optional[str] = Form(None),
     session_id: Optional[str] = Form(None),
 ):
-    if hasattr(http_request.state, "user_id") and patient_id != http_request.state.user_id:
+    if hasattr(request.state, "user_id") and patient_id != request.state.user_id:
         raise HTTPException(status_code=403, detail="Forbidden")
     if image.content_type not in ["image/jpeg", "image/png", "image/webp", "image/gif"]:
         raise HTTPException(400, "Invalid format. Only JPEG, PNG, WEBP, and GIF allowed.")
@@ -913,7 +913,7 @@ async def analyze_image(
 @app.post("/api/image/analyze/stream")
 @limiter.limit("5/minute")
 async def analyze_image_stream(
-    http_request: Request,
+    request: Request,
     image: UploadFile = File(...),
     patient_id: str = Form(...),
     body_region: Optional[str] = Form(None),
@@ -922,7 +922,7 @@ async def analyze_image_stream(
     session_id: Optional[str] = Form(None),
     date: Optional[str] = Form(None),
 ):
-    if hasattr(http_request.state, "user_id") and patient_id != http_request.state.user_id:
+    if hasattr(request.state, "user_id") and patient_id != request.state.user_id:
         raise HTTPException(status_code=403, detail="Forbidden")
     if image.content_type not in ["image/jpeg", "image/png", "image/webp", "image/gif"]:
         raise HTTPException(400, "Invalid format. Only JPEG, PNG, WEBP, and GIF allowed.")
@@ -1050,12 +1050,12 @@ async def analyze_image_stream(
 @app.post("/api/report/parse")
 @limiter.limit("5/minute")
 async def parse_lab_report(
-    http_request: Request,
+    request: Request,
     image: UploadFile = File(...),
     patient_id: str = Form(...),
     session_id: Optional[str] = Form(None),
 ):
-    if hasattr(http_request.state, "user_id") and patient_id != http_request.state.user_id:
+    if hasattr(request.state, "user_id") and patient_id != request.state.user_id:
         raise HTTPException(status_code=403, detail="Forbidden")
     if image.content_type not in ["image/jpeg", "image/png", "image/webp", "image/gif"]:
         raise HTTPException(400, "Invalid format. Only JPEG, PNG, WEBP, and GIF allowed.")
