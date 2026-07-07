@@ -428,16 +428,24 @@ async def status():
 
 @app.get("/api/health")
 async def health_check():
+    """Health check endpoint - safely checks all services without crashing."""
+    def safe_check(service, name):
+        try:
+            return service.check_health()
+        except Exception as e:
+            logger.error(f"Health check failed for {name}: {e}")
+            return False
+    
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "services": {
-            "llm": llm_engine.check_health(),
-            "voice": voice_processor.check_health(),
-            "database": db.check_health(),
-            "rag": rag_engine.check_health(),
-            "triage": triage.check_health(),
-            "vision": vision_analyzer.check_health(),
+            "llm": safe_check(llm_engine, "llm_engine"),
+            "voice": safe_check(voice_processor, "voice_processor"),
+            "database": safe_check(db, "database"),
+            "rag": safe_check(rag_engine, "rag_engine"),
+            "triage": safe_check(triage, "triage"),
+            "vision": safe_check(vision_analyzer, "vision_analyzer"),
         }
     }
 
