@@ -1,1 +1,1 @@
-web: gunicorn -w 2 -b 0.0.0.0:8000 enhanced_api:app
+web: python -m uvicorn enhanced_api:app --host 0.0.0.0 --port $PORT
