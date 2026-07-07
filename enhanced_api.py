@@ -2504,24 +2504,9 @@ async def get_medical_facilities(city: str, specialty: Optional[str] = None):
 @app.on_event("startup")
 async def startup_event():
     logger.info("=" * 60)
-    logger.info("Medical AI Assistant Pro v4.0 — Starting Up")
+    logger.info("Medical AI Assistant Pro v4.0 — Starting Up (Lazy-Loading Enabled)")
     logger.info("=" * 60)
-    for name, svc in [
-        ("LLM Engine", llm_engine),
-        ("Voice Processor", voice_processor),
-        ("RAG Engine", rag_engine),
-        ("TTS Engine", tts_engine),
-        ("Vision Analyzer", vision_analyzer),
-        ("OCR Engine", ocr_engine),
-        ("NER Engine", ner_engine),
-    ]:
-        try:
-            await svc.initialize()
-            logger.info(f"  [OK] {name}")
-        except Exception as e:
-            logger.warning(f"  [FAIL] {name}: {e}")
-    logger.info("=" * 60)
-    logger.info("Server ready -> http://localhost:8000")
+    logger.info("Services will load on first use")
     logger.info("=" * 60)
 
 
