@@ -59,13 +59,17 @@ def _parse_allowed_origins() -> list[str]:
     if frontend_url:
         origins.append(frontend_url)
 
-    if not origins:
-        origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    # Add known production domains as fallbacks
+    origins.extend([
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://ai-health-tracker-six.vercel.app",  # Production frontend
+    ])
 
     seen = set()
     unique_origins = []
     for origin in origins:
-        if origin not in seen:
+        if origin and origin not in seen:
             seen.add(origin)
             unique_origins.append(origin)
     return unique_origins
