@@ -262,18 +262,43 @@ class TTLCache:
 
 _cache = TTLCache(default_ttl=30)  # 30s TTL for RAG/patient lookups
 
-# ── Services ────────────────────────────────────────────────────
-voice_processor = VoiceProcessor()
-llm_engine = MedicalLLMEngine()
+# ── Lazy Service Initialization (prevent memory crash on Railway) ────
+_services = {}
+
+def _get_service(name: str, cls, *args, **kwargs):
+    """Lazy-load services on first use, not at startup."""
+    if name not in _services:
+        logger.info(f"Lazy-loading {name}...")
+        _services[name] = cls(*args, **kwargs)
+    return _services[name]
+
+# Services that are lazy-loaded (heavy ML models)
+class LazyService:
+    """Wrapper for lazy-loading a service."""
+    def __init__(self, name, cls):
+        self.name = name
+        self.cls = cls
+        self._instance = None
+    
+    def __getattr__(self, attr):
+        if self._instance is None:
+            logger.info(f"Lazy-loading {self.name}...")
+            self._instance = self.cls()
+        return getattr(self._instance, attr)
+
+voice_processor = LazyService("voice_processor", VoiceProcessor)
+llm_engine = LazyService("llm_engine", MedicalLLMEngine)
+rag_engine = LazyService("rag_engine", MedicalRAGEngine)
+triage = LazyService("triage", TriageEngine)
+ocr_engine = LazyService("ocr_engine", OCREngine)
+vision_analyzer = LazyService("vision_analyzer", VisionAnalyzer)
+tts_engine = LazyService("tts_engine", TTSEngine)
+translation_service = LazyService("translation_service", TranslationService)
+
+# Services (lightweight or already lazy)
 db = HealthDatabase()
 predictive_engine = PredictiveHealthEngine(db)
-rag_engine = MedicalRAGEngine()
-triage = TriageEngine()
-ocr_engine = OCREngine()
 ner_engine = NEREngine()
-vision_analyzer = VisionAnalyzer()
-tts_engine = TTSEngine()
-translation_service = TranslationService()
 cloud_engine = CloudModelEngine()
 
 os.makedirs("static/audio", exist_ok=True)
