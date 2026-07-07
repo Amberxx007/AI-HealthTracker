@@ -29,7 +29,9 @@ class MedicalLLMEngine:
     - Token streaming for fast perceived response
     """
     
-    DEFAULT_LLAMA_BASE_URL = "http://localhost:8080"
+    # On Railway, Llama server doesn't exist - only use if LLAMA_BASE_URL env var is explicitly set
+    # Local development can set LLAMA_BASE_URL=http://localhost:8080 in .env or environment
+    DEFAULT_LLAMA_BASE_URL = ""  # Empty by default — fallback to cloud providers
     MEDIUM_SYSTEM_PROMPT = """You are Best Dr. AI, a professional and caring medical assistant.
 
 RULES:
@@ -112,16 +114,25 @@ IMPORTANT: You are a TEXT assistant. NEVER output JSON, function calls, or code.
         self.default_provider = os.getenv("DEFAULT_MODEL_PROVIDER", "").strip().lower()
         # Trim whitespace to avoid malformed URLs (e.g. "http://localhost:8081 ")
         self.llama_base_url = os.getenv("LLAMA_BASE_URL", self.DEFAULT_LLAMA_BASE_URL).strip().rstrip("/")
-        self.llama_chat_url = f"{self.llama_base_url}/v1/chat/completions"
-        self.llama_props_url = f"{self.llama_base_url}/props"
-        self.llama_health_url = f"{self.llama_base_url}/health"
+        
+        # Only construct URLs if llama_base_url is configured
+        if self.llama_base_url:
+            self.llama_chat_url = f"{self.llama_base_url}/v1/chat/completions"
+            self.llama_props_url = f"{self.llama_base_url}/props"
+            self.llama_health_url = f"{self.llama_base_url}/health"
+            logger.info(f"Medical LLM endpoint: {self.llama_base_url}")
+        else:
+            self.llama_chat_url = None
+            self.llama_props_url = None
+            self.llama_health_url = None
+            logger.info("Llama server not configured - will use cloud providers for LLM")
+        
         # Semaphore for parallel request handling — allows queueing
         # llama-server handles one at a time, but we queue gracefully
         self._semaphore = asyncio.Semaphore(3)
         self._request_counter = 0
         self._lock = asyncio.Lock()
         logger.info(f"Medical LLM initialized with model: {model_name}")
-        logger.info(f"Medical LLM endpoint: {self.llama_base_url}")
 
     def _preferred_provider(self) -> str:
         """Choose cloud first when configured, otherwise use local if healthy."""
@@ -135,6 +146,8 @@ IMPORTANT: You are a TEXT assistant. NEVER output JSON, function calls, or code.
         for provider in ("openai", "gemini", "anthropic"):
             if self._cloud_key_available(provider):
                 return provider
+        # If no cloud provider available and Llama not healthy, return "core" but it will fail
+        # This is expected behavior - user should configure a cloud provider on Railway
         return "core"
 
     @staticmethod
@@ -175,6 +188,11 @@ IMPORTANT: You are a TEXT assistant. NEVER output JSON, function calls, or code.
     
     def _detect_context_size(self):
         """Query llama-server for actual context window size."""
+        if not self.llama_props_url:
+            # Llama not configured, use default
+            logger.info("Llama not configured, using default context window: 2048 tokens")
+            return
+        
         try:
             r = requests.get(self.llama_props_url, timeout=5)
             data = r.json()
@@ -258,6 +276,10 @@ IMPORTANT: You are a TEXT assistant. NEVER output JSON, function calls, or code.
 
     async def initialize(self):
         """Check LLM connectivity"""
+        if not self.llama_health_url:
+            logger.info("Llama server not configured - will use cloud providers")
+            return
+        
         try:
             response = requests.get(
                 self.llama_health_url,
@@ -288,6 +310,16 @@ IMPORTANT: You are a TEXT assistant. NEVER output JSON, function calls, or code.
             return await self._generate_cloud_text(
                 preferred_provider, message, history, patient_id, temperature, max_tokens, extra_context
             )
+
+        # If we reach here with preferred_provider == "core", ensure Llama is actually configured
+        if not self.llama_chat_url:
+            logger.warning("Llama not configured and no cloud provider available - returning error response")
+            return {
+                "response": "I'm unable to process your request at this moment. Please try again later or contact support.",
+                "confidence": 0.1,
+                "model": "unavailable",
+                "timestamp": datetime.now().isoformat(),
+            }
 
         async with self._semaphore:
             async with self._lock:
@@ -651,7 +683,12 @@ IMPORTANT: You are a TEXT assistant. NEVER output JSON, function calls, or code.
         }
     
     def check_health(self) -> bool:
-        """Check if LLM server is accessible"""
+        """Check if LLM server is accessible (only if configured)"""
+        if not self.llama_base_url:
+            # Llama not configured, so it's not healthy, but that's OK
+            # (cloud providers will be used instead)
+            return False
+        
         try:
             response = requests.get(
                 self.llama_health_url,
