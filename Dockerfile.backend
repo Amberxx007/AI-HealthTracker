@@ -25,7 +25,8 @@ RUN mkdir -p /app/data /app/static/audio /app/static/images /app/logs
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD curl --fail http://localhost:8000/api/health || exit 1
+# HEALTHCHECK temporarily disabled - debugging 502 errors
+# HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+#   CMD curl --fail http://localhost:8000/api/health || exit 1
 
-CMD ["sh", "-c", "gunicorn enhanced_api:app -k uvicorn.workers.UvicornWorker -w ${WEB_CONCURRENCY:-2} --bind 0.0.0.0:8000 --access-logfile - --error-logfile -"]
+CMD ["sh", "-c", "gunicorn enhanced_api:app -k uvicorn.workers.UvicornWorker -w ${WEB_CONCURRENCY:-2} --bind 0.0.0.0:8000 --access-logfile - --error-logfile - --log-level debug --timeout 120"]
