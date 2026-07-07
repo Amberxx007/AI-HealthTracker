@@ -518,14 +518,12 @@ async def login_user(req: LoginRequest):
 
 @app.get("/api/model-providers")
 async def get_model_providers():
-    """List available model providers and their status"""
-    core_available = llm_engine.check_health()
+    """List available cloud model providers (no local Llama)"""
+    available_cloud = cloud_engine.get_available_providers()
+    # For cloud-only deployment, don't show "Core (Llama)" unless explicitly configured
     return {
-        "default_provider": _resolve_model_provider(None),
-        "providers": [
-            {"id": "core", "label": "Core (Llama)", "available": core_available, "description": "Local AI — requires a self-hosted model server"},
-            *cloud_engine.get_available_providers(),
-        ]
+        "default_provider": "gemini",  # Use free Gemini by default
+        "providers": available_cloud
     }
 
 @app.post("/api/chat/stream")
