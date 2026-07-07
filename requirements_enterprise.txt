@@ -5,7 +5,7 @@ gunicorn==21.2.0
 python-multipart==0.0.9
 websockets==12.0
 pydantic==2.6.1
-numpy==2.1.3
+numpy==1.26.4
 
 # AI Models
 torch==2.12.1
@@ -27,10 +27,8 @@ sqlalchemy==2.0.25
 cryptography>=43.0.0
 
 # Audio Processing
-# (Handled client-side)
-
-# OCR
-easyocr==1.7.2
+sounddevice==0.4.6
+scipy==1.11.4
 
 # Biomedical NER (scispaCy)
 scispacy==0.6.2
@@ -40,6 +38,9 @@ scispacy==0.6.2
 
 # RAG / Vector Search
 faiss-cpu==1.7.4
+
+# OCR
+easyocr==1.7.2
 
 # Utilities
 python-dotenv==1.0.1
@@ -56,4 +57,3 @@ PyJWT==2.8.0
 passlib==1.7.4
 bcrypt==4.1.2
 slowapi==0.1.9
-gunicorn==21.2.0
