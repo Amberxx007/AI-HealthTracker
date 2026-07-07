@@ -26,9 +26,36 @@ const apiFetch = async (url, options = {}) => {
   
   const res = await window.fetch(url, { ...options, headers });
   if (res.status === 401 || res.status === 403) {
+    // Token might have expired, try to refresh
+    localStorage.removeItem("ai_doctor_token");
     window.dispatchEvent(new Event("auth_error"));
   }
   return res;
+};
+
+// Auto-register and get JWT token
+const registerOrLogin = async (patientId) => {
+  const existingToken = localStorage.getItem("ai_doctor_token");
+  if (existingToken) return existingToken;  // Already have token
+  
+  try {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || window.location.origin}/api/auth/quick-register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ patient_id: patientId }),
+    });
+    
+    if (res.ok) {
+      const data = await res.json();
+      if (data.access_token) {
+        localStorage.setItem("ai_doctor_token", data.access_token);
+        return data.access_token;
+      }
+    }
+  } catch (err) {
+    console.error("Registration failed:", err);
+  }
+  return null;
 };
 
 const API = process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? window.location.origin : "");
@@ -1579,8 +1606,13 @@ export default function EnhancedMedicalChat() {
   /* ── INIT ── */
   useEffect(() => {
     const stored = localStorage.getItem("ma_patient_id");
-    if (stored) setPatientId(stored);
-    else { const id = "patient_" + Date.now(); localStorage.setItem("ma_patient_id", id); setPatientId(id); }
+    const id = stored || ("patient_" + Date.now());
+    if (!stored) localStorage.setItem("ma_patient_id", id);
+    setPatientId(id);
+    
+    // Auto-register to get JWT token
+    registerOrLogin(id);
+    
     const th = localStorage.getItem("ma_theme");
     if (th === "light") setIsDark(false);
     const ac = localStorage.getItem("ma_accent");

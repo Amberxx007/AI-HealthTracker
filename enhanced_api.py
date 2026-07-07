@@ -436,6 +436,28 @@ async def register_user(req: RegisterRequest):
     )
     return {"message": "User registered successfully"}
 
+@app.post("/api/auth/quick-register")
+async def quick_register_user(req: dict):
+    """Quick registration for frontend — auto-registers with just patient_id"""
+    patient_id = req.get("patient_id", "").strip()
+    if not patient_id:
+        raise HTTPException(status_code=400, detail="patient_id required")
+    
+    # Auto-register if not exists
+    existing = db.get_patient(patient_id)
+    if not existing:
+        db.ensure_patient(
+            patient_id=patient_id,
+            name=patient_id,
+            password_hash=None,  # No password needed for auto-generated accounts
+            age=None,
+            gender=None
+        )
+    
+    # Generate access token
+    access_token = create_access_token(data={"sub": patient_id})
+    return {"access_token": access_token, "token_type": "bearer", "patient_id": patient_id}
+
 @app.post("/api/auth/login")
 async def login_user(req: LoginRequest):
     patient = db.get_patient(req.patient_id)
