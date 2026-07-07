@@ -28,19 +28,19 @@ cryptography>=43.0.0
 
 # Audio Processing
 sounddevice==0.4.6
-scipy==1.11.4
+# scipy removed - requires Fortran compiler on Render
 
 # Biomedical NER (scispaCy)
-scispacy==0.6.2
-# Models installed separately:
-#   pip install https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.4/en_ner_bc5cdr_md-0.5.4.tar.gz
-#   pip install https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.4/en_core_sci_sm-0.5.4.tar.gz
+# Removed - requires Python <3.13, not compatible with modern versions on Render
+# To use locally: pip install scispacy
+# Models: https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.4/
 
 # RAG / Vector Search
 faiss-cpu==1.7.4
 
 # OCR
-easyocr==1.7.2
+# easyocr removed - requires compilation on Render
+# To use locally: pip install easyocr
 
 # Utilities
 python-dotenv==1.0.1
