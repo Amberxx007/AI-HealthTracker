@@ -420,6 +420,12 @@ async def root():
     return {"service": "Medical AI Assistant Pro", "version": "4.0.0", "status": "operational"}
 
 
+@app.get("/status")
+async def status():
+    """Simple diagnostic endpoint - no service checks, just confirm app is running"""
+    return {"status": "OK", "app": "Medical AI Assistant", "environment": os.getenv("ENVIRONMENT", "local")}
+
+
 @app.get("/api/health")
 async def health_check():
     return {
