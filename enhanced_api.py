@@ -428,26 +428,24 @@ async def status():
 
 @app.get("/api/health")
 async def health_check():
-    """Health check endpoint - safely checks all services without crashing."""
-    def safe_check(service, name):
-        try:
-            return service.check_health()
-        except Exception as e:
-            logger.error(f"Health check failed for {name}: {e}")
-            return False
-    
-    return {
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "services": {
-            "llm": safe_check(llm_engine, "llm_engine"),
-            "voice": safe_check(voice_processor, "voice_processor"),
-            "database": safe_check(db, "database"),
-            "rag": safe_check(rag_engine, "rag_engine"),
-            "triage": safe_check(triage, "triage"),
-            "vision": safe_check(vision_analyzer, "vision_analyzer"),
+    """Health check endpoint - simplified to avoid triggering service initialization."""
+    try:
+        # Just return healthy - avoid checking all services which might crash
+        # Services will be lazy-loaded only when actually used
+        return {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "services": {
+                "database": db.check_health(),  # DB is initialized, safe to check
+            }
         }
-    }
+    except Exception as e:
+        logger.error(f"Health check error: {str(e)[:100]}")
+        return {
+            "status": "degraded",
+            "timestamp": datetime.now().isoformat(),
+            "error": "service_check_failed"
+        }
 
 
 # ══════════════════════════════════════════════════════════════════
