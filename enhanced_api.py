@@ -2504,9 +2504,8 @@ async def get_medical_facilities(city: str, specialty: Optional[str] = None):
 @app.on_event("startup")
 async def startup_event():
     logger.info("=" * 60)
-    logger.info("Medical AI Assistant Pro v4.0 — Starting Up (Lazy-Loading Enabled)")
-    logger.info("=" * 60)
-    logger.info("Services will load on first use")
+    logger.info("Medical AI Assistant Pro v4.0 — Starting Up")
+    logger.info("Services will load on-demand (lazy loading enabled)")
     logger.info("=" * 60)
 
 
