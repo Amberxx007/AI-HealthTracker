@@ -181,6 +181,18 @@ from fastapi.responses import JSONResponse
 from jose import jwt, JWTError
 from services.auth import SECRET_KEY, ALGORITHM
 
+def _corsify_error_response(response: JSONResponse) -> JSONResponse:
+    """
+    Starlette's CORS middleware can be bypassed when we short-circuit with our
+    own middleware-returned JSONResponse (401/403). Browsers then treat the
+    response as a CORS failure and surface it as `TypeError: Failed to fetch`.
+    """
+    response.headers.setdefault("Access-Control-Allow-Origin", "*")
+    response.headers.setdefault("Vary", "Origin")
+    response.headers.setdefault("Access-Control-Allow-Methods", "*")
+    response.headers.setdefault("Access-Control-Allow-Headers", "*")
+    return response
+
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
@@ -196,14 +208,18 @@ async def auth_middleware(request: Request, call_next):
     # Check Authorization header
     auth_header = request.headers.get("Authorization")
     if not auth_header or not auth_header.startswith("Bearer "):
-        return JSONResponse(status_code=401, content={"detail": "Missing or invalid authentication token"})
+        return _corsify_error_response(
+            JSONResponse(status_code=401, content={"detail": "Missing or invalid authentication token"})
+        )
         
     token = auth_header.split(" ")[1]
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         patient_id = payload.get("sub")
         if not patient_id:
-            return JSONResponse(status_code=401, content={"detail": "Invalid token payload"})
+            return _corsify_error_response(
+                JSONResponse(status_code=401, content={"detail": "Invalid token payload"})
+            )
             
         request.state.user_id = patient_id
         
@@ -214,10 +230,14 @@ async def auth_middleware(request: Request, call_next):
             if idx + 1 < len(parts):
                 path_patient_id = parts[idx + 1]
                 if path_patient_id != patient_id:
-                    return JSONResponse(status_code=403, content={"detail": "Access forbidden to this patient's data"})
+                    return _corsify_error_response(
+                        JSONResponse(status_code=403, content={"detail": "Access forbidden to this patient's data"})
+                    )
                     
     except JWTError:
-        return JSONResponse(status_code=401, content={"detail": "Invalid or expired token"})
+        return _corsify_error_response(
+            JSONResponse(status_code=401, content={"detail": "Invalid or expired token"})
+        )
         
     return await call_next(request)
 

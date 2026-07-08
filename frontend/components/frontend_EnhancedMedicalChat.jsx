@@ -1510,6 +1510,9 @@ export default function EnhancedMedicalChat() {
   const [showDisclaimer, setShowDisclaimer] = useState(true);
   /* ── Model Selector ── */
   const [selectedModel, setSelectedModel] = useState("core");
+  const [isAuthed, setIsAuthed] = useState(() => {
+    try { return !!localStorage.getItem("ai_doctor_token"); } catch { return false; }
+  });
   const [showModelMenu, setShowModelMenu] = useState(false);
   const [modelProviders, setModelProviders] = useState([]);
   /* ── Risk Notification ── */
@@ -1612,7 +1615,7 @@ export default function EnhancedMedicalChat() {
     setPatientId(id);
     
     // Auto-register to get JWT token
-    registerOrLogin(id);
+    registerOrLogin(id).then(t => setIsAuthed(!!t));
     
     const th = localStorage.getItem("ma_theme");
     if (th === "light") setIsDark(false);
@@ -1620,7 +1623,13 @@ export default function EnhancedMedicalChat() {
     if (ac && ACCENT_PRESETS[ac]) setAccentKey(ac);
   }, []);
 
-  useEffect(() => { if (patientId) { loadSessions(); loadDashboard(); loadPatientList(); loadTrajectory(); } }, [patientId]);
+  useEffect(() => {
+    if (!patientId || !isAuthed) return;
+    loadSessions();
+    loadDashboard();
+    loadPatientList();
+    loadTrajectory();
+  }, [patientId, isAuthed]);
 
   /* ── Load model providers on mount ── */
   useEffect(() => {
@@ -1765,6 +1774,23 @@ export default function EnhancedMedicalChat() {
   ════════════════════════════════════════ */
   const sendMessage = useCallback(async () => {
     if (!input.trim() || isLoading) return;
+
+    // Ensure we have a JWT before hitting protected endpoints.
+    try {
+      const token = localStorage.getItem("ai_doctor_token");
+      if (!token) {
+        const t = await registerOrLogin(patientId);
+        setIsAuthed(!!t);
+        if (!t) {
+          addMsg("assistant", "Authentication failed. Please refresh and try again.", { error: true });
+          return;
+        }
+      }
+    } catch {
+      addMsg("assistant", "Authentication storage unavailable in this browser session.", { error: true });
+      return;
+    }
+
     const msg = input; setInput("");
     addMsg("user", msg);
     setIsLoading(true); setCanStop(true); setTriageInfo(null);
