@@ -58,7 +58,8 @@ const registerOrLogin = async (patientId) => {
   return null;
 };
 
-const API = process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? window.location.origin : "");
+// PRODUCTION: https://ai-healthtracker-production.up.railway.app
+const API = "https://ai-healthtracker-production.up.railway.app";
 
 /* ═══════════════════════════════════════════════════════════
    CONSTANTS
