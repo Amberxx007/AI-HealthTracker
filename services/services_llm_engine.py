@@ -848,6 +848,7 @@ class CloudModelEngine:
         messages.append({"role": "user", "content": message})
 
         attempted = []
+        last_error: Exception | None = None
         for candidate in self._fallback_order(provider):
             candidate_info = self.PROVIDERS[candidate]
             candidate_key = os.environ.get(candidate_info["env_key"], "").strip()
@@ -857,9 +858,13 @@ class CloudModelEngine:
                     yield token
                 return
             except Exception as e:
+                last_error = e
                 logger.error(f"Cloud model error ({candidate}): {e}", exc_info=True)
 
         attempted_labels = ", ".join(self.PROVIDERS[pid]["label"] for pid in attempted) or info["label"]
+        if last_error:
+            # Include a short diagnostic to speed up production debugging (no secrets).
+            yield f"\n\nCloud provider error: {str(last_error)[:240]}"
         yield f"\n\nSorry, the configured cloud model providers are unavailable right now ({attempted_labels}). Please try again later or switch to the Core model."
 
     async def _stream_openai(self, api_key, messages, temperature, max_tokens):
@@ -894,7 +899,14 @@ class CloudModelEngine:
 
     async def _stream_gemini(self, api_key, messages, temperature, max_tokens):
         import httpx
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key={api_key}"
+        # Some projects/keys do not have access to all Gemini models.
+        # Try a small fallback list to improve reliability in free-tier deployments.
+        primary_model = os.getenv("GEMINI_MODEL", "").strip() or "gemini-2.0-flash"
+        model_candidates = [
+            primary_model,
+            "gemini-1.5-flash",
+            "gemini-1.5-flash-8b",
+        ]
         # Convert OpenAI-style messages to Gemini format
         system_text = ""
         contents = []
@@ -913,23 +925,35 @@ class CloudModelEngine:
             payload["systemInstruction"] = {"parts": [{"text": system_text}]}
 
         async with httpx.AsyncClient(timeout=120) as client:
-            async with client.stream("POST", url, json=payload) as resp:
-                if resp.status_code != 200:
-                    error_body = await resp.aread()
-                    raise Exception(f"Gemini API error {resp.status_code}: {error_body.decode()[:200]}")
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    data = line[6:]
-                    try:
-                        chunk = json.loads(data)
-                        parts = chunk.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-                        for part in parts:
-                            text = part.get("text", "")
-                            if text:
-                                yield text
-                    except (json.JSONDecodeError, KeyError, IndexError):
-                        continue
+            last_error: Exception | None = None
+            for model in model_candidates:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse&key={api_key}"
+                try:
+                    async with client.stream("POST", url, json=payload) as resp:
+                        if resp.status_code != 200:
+                            error_body = await resp.aread()
+                            raise Exception(
+                                f"Gemini API error {resp.status_code} (model={model}): {error_body.decode(errors='ignore')[:400]}"
+                            )
+                        async for line in resp.aiter_lines():
+                            if not line.startswith("data: "):
+                                continue
+                            data = line[6:]
+                            try:
+                                chunk = json.loads(data)
+                                parts = chunk.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+                                for part in parts:
+                                    text = part.get("text", "")
+                                    if text:
+                                        yield text
+                            except (json.JSONDecodeError, KeyError, IndexError):
+                                continue
+                        return
+                except Exception as e:
+                    last_error = e
+                    continue
+
+            raise last_error or Exception("Gemini API error: unknown failure")
 
     async def _stream_anthropic(self, api_key, messages, temperature, max_tokens):
         import httpx
