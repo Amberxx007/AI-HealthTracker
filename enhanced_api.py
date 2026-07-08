@@ -675,8 +675,8 @@ async def chat_stream(chat_request: ChatRequest, request: Request):
             }
             extra_with_mode = extra + mode_ctx.get(mode, "")
 
-            # Route to cloud or core model
-            provider = getattr(chat_request, 'model_provider', 'core') or 'core'
+            # Route to cloud or core model (resolve to available provider)
+            provider = _resolve_model_provider(getattr(chat_request, 'model_provider', None))
             if provider != "core" and provider in ("openai", "gemini", "anthropic"):
                 # Cloud model streaming
                 async for token in cloud_engine.generate_response_stream(
@@ -824,21 +824,21 @@ async def chat_endpoint(chat_request: ChatRequest, request: Request):
     ]))
 
     llm_resp = await _generate_model_response(
-        provider=request.model_provider,
-        message=request.message,
+        provider=chat_request.model_provider,
+        message=chat_request.message,
         history=history,
         patient_id=patient_id,
         extra_context=extra,
     )
     resp_text = llm_resp["response"]
 
-    db.save_message(patient_id, session_id, "user", request.message, detected_lang)
+    db.save_message(patient_id, session_id, "user", chat_request.message, detected_lang)
     db.save_message(patient_id, session_id, "assistant", resp_text, detected_lang,
                     metadata={"triage": triage_result})
 
     # Use input language for TTS voice selection — NOT re-detected from LLM response text.
     # This ensures Punjabi input always gets Hindi/Punjabi voice even if LLM responded in English.
-    tts_lang = request.language if request.language and request.language != "auto" else detected_lang
+    tts_lang = chat_request.language if chat_request.language and chat_request.language != "auto" else detected_lang
     audio_url = await tts_engine.generate_speech(resp_text, tts_lang, patient_id, session_id)
 
     return {

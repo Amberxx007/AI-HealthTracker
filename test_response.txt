@@ -1,0 +1,7 @@
+﻿data: {"type": "triage", "level": "general", "reason": "General health inquiry"}
+
+data: {"type": "done", "session_id": "dbd66404-e2b2-4dd4-8ac5-6cb593d9f9e1", "language": "en", "triage": {"level": "general", "reason": "General health inquiry", "recommendation": "Home care may be appropriate. Monitor symptoms.", "color": "green"}, "citations": []}
+
+data: [DONE]
+
+
