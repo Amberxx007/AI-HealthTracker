@@ -733,7 +733,8 @@ async def chat_stream(chat_request: ChatRequest, request: Request):
                 # Yield fallback response as chunks
                 for chunk in full.split('\n'):
                     if chunk.strip():
-                        yield f"data: {json.dumps({'type':'chunk','content':chunk + '\n'})}\n\n"
+                        newline = '\n'
+                        yield f"data: {json.dumps({'type':'chunk','content':chunk + newline})}\n\n"
 
             db.save_message(patient_id, session_id, "user", chat_request.message, detected_lang)
             db.save_message(patient_id, session_id, "assistant", full, detected_lang,
