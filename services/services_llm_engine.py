@@ -135,17 +135,25 @@ IMPORTANT: You are a TEXT assistant. NEVER output JSON, function calls, or code.
         logger.info(f"Medical LLM initialized with model: {model_name}")
 
     def _preferred_provider(self) -> str:
-        """Choose cloud first when configured, otherwise use local if healthy."""
-        cloud_order = [self.default_provider, "openai", "gemini", "anthropic"]
+        """Choose default provider first, then cloud models, otherwise use local if healthy."""
+        # If the user explicitly wants the local offline model and it's healthy, use it
+        if self.default_provider == "core" and self.check_health():
+            return "core"
+            
+        cloud_order = [self.default_provider, "openai", "gemini", "anthropic", "groq"]
         for provider in cloud_order:
             if provider in CloudModelEngine.PROVIDERS and self._cloud_key_available(provider):
                 if provider != "core":
                     return provider
+                    
+        # If no cloud provider was found or available, try local
         if self.check_health():
             return "core"
-        for provider in ("openai", "gemini", "anthropic"):
+            
+        for provider in ("openai", "gemini", "anthropic", "groq"):
             if self._cloud_key_available(provider):
                 return provider
+                
         # If no cloud provider available and Llama not healthy, return "core" but it will fail
         # This is expected behavior - user should configure a cloud provider on Railway
         return "core"
