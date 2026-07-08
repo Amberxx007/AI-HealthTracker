@@ -543,14 +543,14 @@ async def chat_stream(chat_request: ChatRequest, request: Request):
     """
     if hasattr(request.state, "user_id") and chat_request.patient_id != request.state.user_id:
         raise HTTPException(status_code=403, detail="Forbidden")
-    session_id = request.session_id or str(uuid.uuid4())
-    patient_id = request.patient_id
+    session_id = chat_request.session_id or str(uuid.uuid4())
+    patient_id = chat_request.patient_id
     db.ensure_patient(patient_id)
 
     detected_lang = (
-        translation_service.detect_language(request.message)
-        if request.language == "auto"
-        else request.language
+        translation_service.detect_language(chat_request.message)
+        if chat_request.language == "auto"
+        else chat_request.language
     )
 
     # ══ PARALLEL PRE-FETCH ══════════════════════════════════════
@@ -563,9 +563,9 @@ async def chat_stream(chat_request: ChatRequest, request: Request):
         patient_data,
         history,
     ) = await asyncio.gather(
-        _async_triage(request.message),
-        _async_rag_context(request.message, top_k=3),
-        _async_rag_citations(request.message, top_k=3),
+        _async_triage(chat_request.message),
+        _async_rag_context(chat_request.message, top_k=3),
+        _async_rag_citations(chat_request.message, top_k=3),
         _async_patient_context(patient_id),
         _async_patient_data(patient_id),
         _async_conversation(patient_id, session_id, limit=10),
