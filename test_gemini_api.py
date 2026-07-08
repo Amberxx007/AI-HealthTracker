@@ -4,7 +4,9 @@ import httpx
 import json
 import os
 
-api_key = 'AIzaSyC1P_wfSs1bSZCnimdo_DvVcX3KQgt1ZcQ'
+api_key = os.environ.get("GOOGLE_AI_API_KEY", "").strip()
+if not api_key:
+    raise SystemExit("Missing env var GOOGLE_AI_API_KEY")
 
 async def test_gemini():
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key={api_key}"

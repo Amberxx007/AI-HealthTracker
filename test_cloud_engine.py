@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 import os
 import asyncio
-os.environ['GOOGLE_AI_API_KEY'] = 'AIzaSyC1P_wfSs1bSZCnimdo_DvVcX3KQgt1ZcQ'
 
 from services.services_llm_engine import CloudModelEngine
 

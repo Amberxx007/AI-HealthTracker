@@ -4,7 +4,9 @@ import httpx
 import json
 import os
 
-api_key = os.environ.get('GROQ_API_KEY', '').strip() or 'gsk_xPJuBMchSdzQDV2qq1rQWGdyb3FYzHQjacZfuj2sV...'
+api_key = os.environ.get("GROQ_API_KEY", "").strip()
+if not api_key:
+    raise SystemExit("Missing env var GROQ_API_KEY")
 
 async def test_groq():
     url = "https://api.groq.com/openai/v1/chat/completions"
