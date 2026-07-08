@@ -847,6 +847,9 @@ class CloudModelEngine:
         }
         async with httpx.AsyncClient(timeout=120) as client:
             async with client.stream("POST", url, json=payload, headers=headers) as resp:
+                if resp.status_code != 200:
+                    error_body = await resp.aread()
+                    raise Exception(f"OpenAI API error {resp.status_code}: {error_body.decode()[:200]}")
                 async for line in resp.aiter_lines():
                     if not line.startswith("data: "):
                         continue
@@ -883,6 +886,9 @@ class CloudModelEngine:
 
         async with httpx.AsyncClient(timeout=120) as client:
             async with client.stream("POST", url, json=payload) as resp:
+                if resp.status_code != 200:
+                    error_body = await resp.aread()
+                    raise Exception(f"Gemini API error {resp.status_code}: {error_body.decode()[:200]}")
                 async for line in resp.aiter_lines():
                     if not line.startswith("data: "):
                         continue
@@ -923,6 +929,9 @@ class CloudModelEngine:
         }
         async with httpx.AsyncClient(timeout=120) as client:
             async with client.stream("POST", url, json=payload, headers=headers) as resp:
+                if resp.status_code != 200:
+                    error_body = await resp.aread()
+                    raise Exception(f"Anthropic API error {resp.status_code}: {error_body.decode()[:200]}")
                 async for line in resp.aiter_lines():
                     if not line.startswith("data: "):
                         continue
@@ -950,6 +959,9 @@ class CloudModelEngine:
         }
         async with httpx.AsyncClient(timeout=120) as client:
             async with client.stream("POST", url, json=payload, headers=headers) as resp:
+                if resp.status_code != 200:
+                    error_body = await resp.aread()
+                    raise Exception(f"Groq API error {resp.status_code}: {error_body.decode()[:200]}")
                 async for line in resp.aiter_lines():
                     if not line.startswith("data: "):
                         continue
