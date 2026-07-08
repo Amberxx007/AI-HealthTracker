@@ -677,6 +677,7 @@ async def chat_stream(chat_request: ChatRequest, request: Request):
 
             # Route to cloud or core model (resolve to available provider)
             provider = _resolve_model_provider(getattr(chat_request, 'model_provider', None))
+            logger.info(f"Chat stream using provider: {provider}")
             if provider != "core" and provider in ("openai", "gemini", "anthropic", "groq"):
                 # Cloud model streaming
                 async for token in cloud_engine.generate_response_stream(
@@ -715,9 +716,20 @@ async def chat_stream(chat_request: ChatRequest, request: Request):
                     yield f"data: {json.dumps({'type':'chunk','content':token})}\n\n"
 
             if not started:
-                # Edge case: entire response was JSON artifact
+                # Edge case: entire response was JSON artifact or no content generated
                 full = re.sub(r'^[\s{}]*(?:\{[^}]*"name"\s*:[^}]*\}[\s{}]*)*', '', full)
                 full = full.lstrip('\t\n{}')
+            
+            # If still no content, generate a fallback response
+            if not full or full.isspace():
+                logger.warning(f"No LLM response generated for message: {chat_request.message[:50]}... (provider: {provider})")
+                full = (
+                    "I apologize, but I'm experiencing technical difficulties accessing the medical knowledge base right now. "
+                    "Based on your description:\n\n• Please consult with a healthcare professional for proper diagnosis\n"
+                    "• Keep yourself hydrated and rest well\n"
+                    "• Monitor your symptoms for any changes\n\n"
+                    "For urgent symptoms or emergencies, please contact your local emergency services immediately."
+                )
 
             db.save_message(patient_id, session_id, "user", chat_request.message, detected_lang)
             db.save_message(patient_id, session_id, "assistant", full, detected_lang,
