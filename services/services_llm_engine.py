@@ -785,6 +785,37 @@ class CloudModelEngine:
             })
         return result
 
+    async def _stream_with_provider(
+        self,
+        provider: str,
+        api_key: str,
+        messages: List[Dict],
+        temperature: float,
+        max_tokens: int,
+    ) -> AsyncGenerator[str, None]:
+        if provider == "openai":
+            async for token in self._stream_openai(api_key, messages, temperature, max_tokens):
+                yield token
+        elif provider == "gemini":
+            async for token in self._stream_gemini(api_key, messages, temperature, max_tokens):
+                yield token
+        elif provider == "anthropic":
+            async for token in self._stream_anthropic(api_key, messages, temperature, max_tokens):
+                yield token
+        elif provider == "groq":
+            async for token in self._stream_groq(api_key, messages, temperature, max_tokens):
+                yield token
+
+    def _fallback_order(self, primary_provider: str) -> List[str]:
+        ordered = [primary_provider]
+        default_provider = os.getenv("DEFAULT_MODEL_PROVIDER", "").strip().lower()
+        if default_provider and default_provider in self.PROVIDERS and default_provider not in ordered:
+            ordered.append(default_provider)
+        for pid in self.PROVIDERS:
+            if pid not in ordered:
+                ordered.append(pid)
+        return [pid for pid in ordered if self.is_available(pid)]
+
     async def generate_response_stream(
         self,
         provider: str,
@@ -799,8 +830,7 @@ class CloudModelEngine:
         if not info:
             yield "Error: Unknown provider."
             return
-        api_key = os.environ.get(info["env_key"], "").strip()
-        if not api_key:
+        if not self.is_available(provider):
             yield f"⚠️ {info['label']} API key is not configured. Please add your {info['env_key']} to the .env file and restart the server."
             return
 
@@ -817,22 +847,20 @@ class CloudModelEngine:
                 })
         messages.append({"role": "user", "content": message})
 
-        try:
-            if provider == "openai":
-                async for token in self._stream_openai(api_key, messages, temperature, max_tokens):
+        attempted = []
+        for candidate in self._fallback_order(provider):
+            candidate_info = self.PROVIDERS[candidate]
+            candidate_key = os.environ.get(candidate_info["env_key"], "").strip()
+            attempted.append(candidate)
+            try:
+                async for token in self._stream_with_provider(candidate, candidate_key, messages, temperature, max_tokens):
                     yield token
-            elif provider == "gemini":
-                async for token in self._stream_gemini(api_key, messages, temperature, max_tokens):
-                    yield token
-            elif provider == "anthropic":
-                async for token in self._stream_anthropic(api_key, messages, temperature, max_tokens):
-                    yield token
-            elif provider == "groq":
-                async for token in self._stream_groq(api_key, messages, temperature, max_tokens):
-                    yield token
-        except Exception as e:
-            logger.error(f"Cloud model error ({provider}): {e}", exc_info=True)
-            yield f"\n\nSorry, there was an error with {info['label']}. Please try again or switch to the Core model."
+                return
+            except Exception as e:
+                logger.error(f"Cloud model error ({candidate}): {e}", exc_info=True)
+
+        attempted_labels = ", ".join(self.PROVIDERS[pid]["label"] for pid in attempted) or info["label"]
+        yield f"\n\nSorry, the configured cloud model providers are unavailable right now ({attempted_labels}). Please try again later or switch to the Core model."
 
     async def _stream_openai(self, api_key, messages, temperature, max_tokens):
         import httpx

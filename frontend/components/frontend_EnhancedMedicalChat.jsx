@@ -1641,7 +1641,9 @@ export default function EnhancedMedicalChat() {
           setModelProviders(d.providers || []);
           const available = (d.providers || []).filter(p => p.available);
           if (available.length) {
-            const preferred = available.find(p => p.id !== "core") || available[0];
+            const preferred = available.find(p => p.id === d.default_provider)
+              || available.find(p => p.id !== "core")
+              || available[0];
             setSelectedModel(prev => (prev === "core" || !available.some(p => p.id === prev)) ? preferred.id : prev);
           }
         }

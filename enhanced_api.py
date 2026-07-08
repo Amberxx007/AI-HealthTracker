@@ -546,9 +546,8 @@ async def login_user(req: LoginRequest):
 async def get_model_providers():
     """List available cloud model providers (no local Llama)"""
     available_cloud = cloud_engine.get_available_providers()
-    # For cloud-only deployment, don't show "Core (Llama)" unless explicitly configured
     return {
-        "default_provider": "gemini",  # Use free Gemini by default
+        "default_provider": _resolve_model_provider(None),
         "providers": available_cloud
     }
 
