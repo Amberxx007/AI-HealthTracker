@@ -1003,7 +1003,7 @@ class CloudModelEngine:
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         payload = {
-            "model": "llama-3.1-70b-versatile",  # Current Groq model (Llama 3.1 70B)
+            "model": "llama-3.3-70b-versatile",  # Current Groq model (Llama 3.3 70B)
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
