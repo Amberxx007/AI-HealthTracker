@@ -112,9 +112,12 @@ def _resolve_model_provider(requested_provider: Optional[str]) -> str:
     return _available_cloud_provider()
 
 
-def _validate_image_bytes(image_bytes: bytes) -> None:
-    if len(image_bytes) > 5 * 1024 * 1024:
-        raise HTTPException(400, "File too large. Maximum size is 5MB.")
+def _validate_image_bytes(image_bytes: bytes, allow_pdf: bool = False) -> None:
+    if len(image_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(400, "File too large. Maximum size is 10MB.")
+    # PDFs cannot be verified via PIL — skip image validation for them
+    if allow_pdf and image_bytes[:5] == b'%PDF-':
+        return
     try:
         with Image.open(BytesIO(image_bytes)) as image:
             image.verify()
@@ -944,10 +947,11 @@ async def analyze_image(
 ):
     if hasattr(request.state, "user_id") and patient_id != request.state.user_id:
         raise HTTPException(status_code=403, detail="Forbidden")
-    if image.content_type not in ["image/jpeg", "image/png", "image/webp", "image/gif"]:
-        raise HTTPException(400, "Invalid format. Only JPEG, PNG, WEBP, and GIF allowed.")
+    allowed_types = ["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"]
+    if image.content_type not in allowed_types:
+        raise HTTPException(400, "Invalid format. Only JPEG, PNG, WEBP, GIF, and PDF allowed.")
     image_bytes = await image.read()
-    _validate_image_bytes(image_bytes)
+    _validate_image_bytes(image_bytes, allow_pdf=True)
     
     session_id = session_id or str(uuid.uuid4())
     db.ensure_patient(patient_id)
@@ -958,10 +962,15 @@ async def analyze_image(
     with open(ipath, "wb") as f:
         f.write(image_bytes)
 
-    # Vision — pass region and type for intelligent classification
-    vis = await vision_analyzer.analyze_medical_image(image_bytes, body_region=body_region, image_type=image_type)
-    vis_desc = vis.get("description", "Image received.")
-    classified_type = vis.get("image_type", image_type or "photo")
+    is_pdf = image_bytes[:5] == b'%PDF-'
+    if is_pdf:
+        vis_desc = "PDF document uploaded for analysis."
+        classified_type = "document_report"
+    else:
+        vis = await vision_analyzer.analyze_medical_image(image_bytes, body_region=body_region, image_type=image_type)
+        vis_desc = vis.get("description", "Image received.")
+        classified_type = vis.get("image_type", image_type or "photo")
+
 
     # Build smart prompt based on image type
     if classified_type == "xray_scan":
@@ -1026,10 +1035,11 @@ async def analyze_image_stream(
 ):
     if hasattr(request.state, "user_id") and patient_id != request.state.user_id:
         raise HTTPException(status_code=403, detail="Forbidden")
-    if image.content_type not in ["image/jpeg", "image/png", "image/webp", "image/gif"]:
-        raise HTTPException(400, "Invalid format. Only JPEG, PNG, WEBP, and GIF allowed.")
+    allowed_types = ["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"]
+    if image.content_type not in allowed_types:
+        raise HTTPException(400, "Invalid format. Only JPEG, PNG, WEBP, GIF, and PDF allowed.")
     image_bytes = await image.read()
-    _validate_image_bytes(image_bytes)
+    _validate_image_bytes(image_bytes, allow_pdf=True)
         
     session_id = session_id or str(uuid.uuid4())
     db.ensure_patient(patient_id)
@@ -1039,9 +1049,15 @@ async def analyze_image_stream(
     with open(ipath, "wb") as f:
         f.write(image_bytes)
 
-    vis = await vision_analyzer.analyze_medical_image(image_bytes, body_region=body_region, image_type=image_type)
-    vis_desc = vis.get("description", "Image received.")
-    classified_type = vis.get("image_type", image_type or "photo")
+    is_pdf = image_bytes[:5] == b'%PDF-'
+    if is_pdf:
+        # PDFs cannot be vision-analyzed — route directly to document/OCR flow
+        vis_desc = "PDF document uploaded for analysis."
+        classified_type = "document_report"
+    else:
+        vis = await vision_analyzer.analyze_medical_image(image_bytes, body_region=body_region, image_type=image_type)
+        vis_desc = vis.get("description", "Image received.")
+        classified_type = vis.get("image_type", image_type or "photo")
     doc_lab_results = []
 
     if classified_type == "xray_scan":
@@ -1159,11 +1175,12 @@ async def parse_lab_report(
 ):
     if hasattr(request.state, "user_id") and patient_id != request.state.user_id:
         raise HTTPException(status_code=403, detail="Forbidden")
-    if image.content_type not in ["image/jpeg", "image/png", "image/webp", "image/gif"]:
-        raise HTTPException(400, "Invalid format. Only JPEG, PNG, WEBP, and GIF allowed.")
+    allowed_types = ["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"]
+    if image.content_type not in allowed_types:
+        raise HTTPException(400, "Invalid format. Only JPEG, PNG, WEBP, GIF, and PDF allowed.")
     image_bytes = await image.read()
-    if len(image_bytes) > 5 * 1024 * 1024:
-        raise HTTPException(400, "File too large. Maximum size is 5MB.")
+    if len(image_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(400, "File too large. Maximum size is 10MB.")
         
     db.ensure_patient(patient_id)
     ocr = ocr_engine.extract_from_image(image_bytes)
