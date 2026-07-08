@@ -1,5 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Send, Mic, MicOff, Image as ImageIcon, Loader2, Square,
   FileText, Activity, Clock, ChevronRight, Plus, X, Trash2,
@@ -33,30 +35,185 @@ const apiFetch = async (url, options = {}) => {
   return res;
 };
 
-// Auto-register and get JWT token
-const registerOrLogin = async (patientId) => {
-  const existingToken = localStorage.getItem("ai_doctor_token");
-  if (existingToken) return existingToken;  // Already have token
-  
-  try {
-    const res = await fetch(`https://ai-healthtracker-production.up.railway.app/api/auth/quick-register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ patient_id: patientId }),
-    });
-    
-    if (res.ok) {
-      const data = await res.json();
-      if (data.access_token) {
-        localStorage.setItem("ai_doctor_token", data.access_token);
-        return data.access_token;
-      }
-    }
-  } catch (err) {
-    console.error("Registration failed:", err);
-  }
-  return null;
+// ── Auth helpers ──────────────────────────────────────
+const authRegister = async (username, password) => {
+  const res = await fetch(`${"https://ai-healthtracker-production.up.railway.app"}/api/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ patient_id: username.trim().toLowerCase(), password }),
+  });
+  return res;
 };
+
+const authLogin = async (username, password) => {
+  const res = await fetch(`${"https://ai-healthtracker-production.up.railway.app"}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ patient_id: username.trim().toLowerCase(), password }),
+  });
+  return res;
+};
+
+// ── Login Screen Component ─────────────────────────────
+const LoginScreen = ({ onSuccess }) => {
+  const [mode, setMode] = useState("login"); // 'login' | 'register'
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [showPass, setShowPass] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!username.trim() || !password) { setError("Username and password are required."); return; }
+    if (mode === "register" && password !== confirm) { setError("Passwords do not match."); return; }
+    if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
+    setLoading(true); setError("");
+    try {
+      if (mode === "register") {
+        const r = await authRegister(username, password);
+        if (!r.ok) {
+          const d = await r.json();
+          // If already exists, auto-login
+          if (r.status === 400 && d.detail?.includes("already exists")) {
+            setError("Username already taken. Please log in or choose another.");
+            setLoading(false); return;
+          }
+          setError(d.detail || "Registration failed."); setLoading(false); return;
+        }
+      }
+      // login
+      const lr = await authLogin(username, password);
+      if (!lr.ok) {
+        const d = await lr.json();
+        setError(d.detail || "Invalid username or password."); setLoading(false); return;
+      }
+      const data = await lr.json();
+      localStorage.setItem("ai_doctor_token", data.access_token);
+      localStorage.setItem("ma_patient_id", data.patient_id);
+      onSuccess(data.patient_id);
+    } catch { setError("Connection error. Please try again."); }
+    setLoading(false);
+  };
+
+  const inputStyle = {
+    width: "100%", padding: "12px 16px", borderRadius: 12,
+    border: "1.5px solid rgba(99,179,237,0.3)", background: "rgba(255,255,255,0.05)",
+    color: "#e2e8f0", fontSize: 15, outline: "none", boxSizing: "border-box",
+    transition: "border-color 0.2s",
+  };
+
+  return (
+    <div style={{
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+      minHeight: "100dvh", background: "#0a0f1e",
+      backgroundImage: "radial-gradient(ellipse at 20% 50%, rgba(56,189,248,0.08) 0%, transparent 60%), radial-gradient(ellipse at 80% 50%, rgba(139,92,246,0.08) 0%, transparent 60%)",
+      fontFamily: "'DM Sans', sans-serif", padding: 20,
+    }}>
+      <div style={{
+        width: "100%", maxWidth: 420,
+        background: "rgba(255,255,255,0.04)",
+        border: "1px solid rgba(99,179,237,0.15)",
+        borderRadius: 24, padding: "40px 36px",
+        boxShadow: "0 25px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05)",
+        backdropFilter: "blur(24px)",
+      }}>
+        {/* Logo */}
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <div style={{
+            width: 60, height: 60, borderRadius: 18,
+            background: "linear-gradient(135deg, #38bdf8, #818cf8)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            margin: "0 auto 16px", boxShadow: "0 8px 32px rgba(56,189,248,0.4)",
+            fontSize: 28,
+          }}>🏥</div>
+          <div style={{ fontSize: 24, fontWeight: 800, color: "#f0f9ff", letterSpacing: "-0.03em" }}>AI Health Tracker</div>
+          <div style={{ fontSize: 13.5, color: "rgba(148,163,184,0.8)", marginTop: 4 }}>Your personal medical AI assistant</div>
+        </div>
+
+        {/* Mode Toggle */}
+        <div style={{ display: "flex", background: "rgba(255,255,255,0.06)", borderRadius: 12, padding: 4, marginBottom: 28, border: "1px solid rgba(255,255,255,0.08)" }}>
+          {["login", "register"].map(m => (
+            <button key={m} onClick={() => { setMode(m); setError(""); }}
+              style={{
+                flex: 1, padding: "9px", border: "none", borderRadius: 9, cursor: "pointer",
+                fontSize: 14, fontWeight: 700, transition: "all 0.2s", fontFamily: "inherit",
+                background: mode === m ? "rgba(56,189,248,0.2)" : "transparent",
+                color: mode === m ? "#38bdf8" : "rgba(148,163,184,0.7)",
+                boxShadow: mode === m ? "0 2px 8px rgba(56,189,248,0.2)" : "none",
+              }}>
+              {m === "login" ? "Sign In" : "Create Account"}
+            </button>
+          ))}
+        </div>
+
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div>
+            <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: "rgba(148,163,184,0.9)", marginBottom: 7, letterSpacing: "0.04em", textTransform: "uppercase" }}>Username</label>
+            <input
+              id="auth-username" autoComplete="username"
+              value={username} onChange={e => setUsername(e.target.value)}
+              placeholder="e.g. john_doe" style={inputStyle}
+              onFocus={e => e.target.style.borderColor = "rgba(56,189,248,0.7)"}
+              onBlur={e => e.target.style.borderColor = "rgba(99,179,237,0.3)"}
+            />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: "rgba(148,163,184,0.9)", marginBottom: 7, letterSpacing: "0.04em", textTransform: "uppercase" }}>Password</label>
+            <div style={{ position: "relative" }}>
+              <input
+                id="auth-password" autoComplete={mode === "register" ? "new-password" : "current-password"}
+                type={showPass ? "text" : "password"}
+                value={password} onChange={e => setPassword(e.target.value)}
+                placeholder="Min 6 characters" style={{ ...inputStyle, paddingRight: 48 }}
+                onFocus={e => e.target.style.borderColor = "rgba(56,189,248,0.7)"}
+                onBlur={e => e.target.style.borderColor = "rgba(99,179,237,0.3)"}
+              />
+              <button type="button" onClick={() => setShowPass(p => !p)} style={{
+                position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)",
+                background: "none", border: "none", cursor: "pointer", color: "rgba(148,163,184,0.6)", fontSize: 13,
+              }}>{showPass ? "🙈" : "👁"}</button>
+            </div>
+          </div>
+          {mode === "register" && (
+            <div>
+              <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: "rgba(148,163,184,0.9)", marginBottom: 7, letterSpacing: "0.04em", textTransform: "uppercase" }}>Confirm Password</label>
+              <input
+                id="auth-confirm" autoComplete="new-password" type="password"
+                value={confirm} onChange={e => setConfirm(e.target.value)}
+                placeholder="Re-enter password" style={inputStyle}
+                onFocus={e => e.target.style.borderColor = "rgba(56,189,248,0.7)"}
+                onBlur={e => e.target.style.borderColor = "rgba(99,179,237,0.3)"}
+              />
+            </div>
+          )}
+
+          {error && (
+            <div style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 10, padding: "10px 14px", fontSize: 13.5, color: "#f87171" }}>
+              ⚠️ {error}
+            </div>
+          )}
+
+          <button type="submit" disabled={loading} style={{
+            marginTop: 6, padding: "13px", borderRadius: 14,
+            background: "linear-gradient(135deg, #38bdf8, #818cf8)",
+            border: "none", color: "white", fontSize: 15.5, fontWeight: 800, cursor: loading ? "not-allowed" : "pointer",
+            opacity: loading ? 0.7 : 1, transition: "opacity 0.2s, transform 0.1s",
+            boxShadow: "0 8px 24px rgba(56,189,248,0.35)", fontFamily: "inherit",
+          }}>
+            {loading ? "Please wait…" : (mode === "login" ? "Sign In →" : "Create Account →")}
+          </button>
+        </form>
+
+        <div style={{ textAlign: "center", marginTop: 20, fontSize: 12, color: "rgba(148,163,184,0.5)" }}>
+          🔒 Your data is private and secured. Passwords are encrypted.
+        </div>
+      </div>
+    </div>
+  );
+};
+
 
 // PRODUCTION: https://ai-healthtracker-production.up.railway.app
 const API = "https://ai-healthtracker-production.up.railway.app";
@@ -271,6 +428,28 @@ body {
 .dot1{animation:bounce 1.2s ease-in-out infinite}
 .dot2{animation:bounce 1.2s ease-in-out .14s infinite}
 .dot3{animation:bounce 1.2s ease-in-out .28s infinite}
+
+/* ═══ MARKDOWN RENDERED OUTPUT ═══ */
+.ma-markdown h1,.ma-markdown h2,.ma-markdown h3{font-weight:800;margin:1em 0 0.5em;letter-spacing:-0.02em;color:${T.text}}
+.ma-markdown h1{font-size:1.3em}
+.ma-markdown h2{font-size:1.15em;border-bottom:1px solid ${T.border};padding-bottom:0.3em}
+.ma-markdown h3{font-size:1.05em;color:${T.accent}}
+.ma-markdown p{margin:0.55em 0;line-height:1.75}
+.ma-markdown ul,.ma-markdown ol{margin:0.5em 0;padding-left:1.5em}
+.ma-markdown li{margin:0.3em 0;line-height:1.7}
+.ma-markdown li::marker{color:${T.accent}}
+.ma-markdown strong{font-weight:800;color:${T.text}}
+.ma-markdown em{color:${T.textMuted};font-style:italic}
+.ma-markdown code{font-family:"Fira Code",monospace;font-size:0.88em;background:${T.surface2};border:1px solid ${T.border};padding:2px 7px;border-radius:6px;color:${T.accent}}
+.ma-markdown pre{background:${T.surface2};border:1px solid ${T.border};border-radius:10px;padding:14px;overflow-x:auto;margin:0.7em 0}
+.ma-markdown pre code{background:none;border:none;padding:0;color:${T.text}}
+.ma-markdown blockquote{border-left:3px solid ${T.accent};padding-left:1em;margin:0.7em 0;color:${T.textMuted};font-style:italic}
+.ma-markdown table{width:100%;border-collapse:collapse;margin:0.8em 0;font-size:0.9em}
+.ma-markdown th{background:${T.surface2};color:${T.text};font-weight:700;padding:9px 14px;text-align:left;border:1px solid ${T.border}}
+.ma-markdown td{padding:8px 14px;border:1px solid ${T.border};color:${T.text}}
+.ma-markdown tr:nth-child(even) td{background:${T.surface2}}
+.ma-markdown a{color:${T.accent};text-decoration:underline}
+.ma-markdown hr{border:none;border-top:1px solid ${T.border};margin:1em 0}
 
 /* ═══ WAVE BARS ═══ */
 
@@ -1609,13 +1788,14 @@ export default function EnhancedMedicalChat() {
 
   /* ── INIT ── */
   useEffect(() => {
+    // Check if user has a stored valid token from a previous session
     const stored = localStorage.getItem("ma_patient_id");
-    const id = stored || ("patient_" + Date.now());
-    if (!stored) localStorage.setItem("ma_patient_id", id);
-    setPatientId(id);
-    
-    // Auto-register to get JWT token
-    registerOrLogin(id).then(t => setIsAuthed(!!t));
+    const token = localStorage.getItem("ai_doctor_token");
+    if (stored && token) {
+      setPatientId(stored);
+      setIsAuthed(true);
+    }
+    // Otherwise, the LoginScreen will handle setting patientId + token
     
     const th = localStorage.getItem("ma_theme");
     if (th === "light") setIsDark(false);
@@ -1781,12 +1961,9 @@ export default function EnhancedMedicalChat() {
     try {
       const token = localStorage.getItem("ai_doctor_token");
       if (!token) {
-        const t = await registerOrLogin(patientId);
-        setIsAuthed(!!t);
-        if (!t) {
-          addMsg("assistant", "Authentication failed. Please refresh and try again.", { error: true });
-          return;
-        }
+        // Token expired/missing — show login screen
+        setIsAuthed(false);
+        return;
       }
     } catch {
       addMsg("assistant", "Authentication storage unavailable in this browser session.", { error: true });
@@ -2348,6 +2525,11 @@ export default function EnhancedMedicalChat() {
   /* ════════════════════════════════════════
      RENDER
   ════════════════════════════════════════ */
+  // Show Login Screen if not authenticated
+  if (!isAuthed) {
+    return <LoginScreen onSuccess={(pid) => { setPatientId(pid); setIsAuthed(true); }} />;
+  }
+
   return (
     <div suppressHydrationWarning className={seniorMode ? "senior-mode" : ""} style={{
       display: "flex", height: "100dvh", minHeight: "-webkit-fill-available",
@@ -2670,6 +2852,16 @@ export default function EnhancedMedicalChat() {
                         <span style={{ fontSize: 13, fontWeight: 600, color: seniorMode ? T.accent3 : T.text }}>Senior Mode</span>
                       </div>
                       {seniorMode && <Check size={14} style={{ color: T.accent3 }} />}
+                    </button>
+                    {/* Sign Out */}
+                    <button onClick={() => {
+                      localStorage.removeItem("ai_doctor_token");
+                      localStorage.removeItem("ma_patient_id");
+                      setIsAuthed(false);
+                      setPatientId("");
+                    }} className="ma-dropdown-item" style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, marginTop: 4, color: "#f87171" }}>
+                      <span style={{ fontSize: 14 }}>🚪</span>
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>Sign Out</span>
                     </button>
                   </div>
                 )}
@@ -4492,7 +4684,9 @@ export default function EnhancedMedicalChat() {
                           <AlertTriangle size={12} />{symptomResult.triage?.level?.toUpperCase()}
                         </div>
                       )}
-                      <div style={{ whiteSpace: "pre-wrap", fontSize: 14, lineHeight: 1.75, color: T.text }}>{symptomResult.analysis}</div>
+                      <div className="ma-markdown" style={{ fontSize: 14, lineHeight: 1.75, color: T.text }}>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{symptomResult.analysis}</ReactMarkdown>
+                      </div>
                     </div>
                   )}
                 </GCard>
@@ -4541,7 +4735,9 @@ export default function EnhancedMedicalChat() {
                   )}
                   {drugResult && (
                     <div className="fade-up" style={{ marginTop: 16, padding: 18, borderRadius: 14, background: `${T.accent3}07`, border: `1px solid ${T.accent3}18` }}>
-                      <div style={{ whiteSpace: "pre-wrap", fontSize: 14, lineHeight: 1.75, color: T.text }}>{drugResult.analysis}</div>
+                      <div className="ma-markdown" style={{ fontSize: 14, lineHeight: 1.75, color: T.text }}>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{drugResult.analysis}</ReactMarkdown>
+                      </div>
                       <div style={{ fontSize: 11.5, color: T.textMuted, marginTop: 10 }}>{drugResult.disclaimer}</div>
                     </div>
                   )}
@@ -4771,7 +4967,9 @@ export default function EnhancedMedicalChat() {
                   </div>
                   {treatmentResult && (
                     <div className="fade-up" style={{ padding: 18, borderRadius: 14, background: `${T.accent2}07`, border: `1px solid ${T.accent2}22` }}>
-                      <div style={{ whiteSpace: "pre-wrap", fontSize: 14, lineHeight: 1.75, color: T.text }}>{treatmentResult.plan || treatmentResult}</div>
+                      <div className="ma-markdown" style={{ fontSize: 14, lineHeight: 1.75, color: T.text }}>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{treatmentResult.plan || treatmentResult}</ReactMarkdown>
+                      </div>
                     </div>
                   )}
                 </GCard>

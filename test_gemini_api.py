@@ -3,10 +3,13 @@ import asyncio
 import httpx
 import json
 import os
+from dotenv import load_dotenv
 
+load_dotenv()
 api_key = os.environ.get("GOOGLE_AI_API_KEY", "").strip()
 if not api_key:
     raise SystemExit("Missing env var GOOGLE_AI_API_KEY")
+
 
 async def test_gemini():
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key={api_key}"

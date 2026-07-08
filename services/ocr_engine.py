@@ -9,8 +9,11 @@ import re
 import tempfile
 from typing import Dict, List, Optional
 from utils.utils_logger import setup_logger
+from dotenv import load_dotenv
 
+load_dotenv()
 logger = setup_logger(__name__)
+
 
 _reader = None
 
@@ -213,14 +216,46 @@ class OCREngine:
             logger.warning(f"OCR init failed (will retry on use): {e}")
 
     def extract_text(self, image_bytes: bytes) -> str:
-        """OCR an image or extract text from PDF"""
-        # Detect PDF by header
+        """OCR an image or extract text from PDF with local model and Gemini fallback"""
         is_pdf = image_bytes[:5] == b'%PDF-'
 
         if is_pdf:
-            return self._extract_text_from_pdf(image_bytes)
+            # 1. Try direct PyMuPDF text extraction
+            try:
+                res = self._extract_text_from_pdf(image_bytes)
+                if res and len(res.strip()) > 50:
+                    return res
+            except Exception as e:
+                logger.warning(f"Local direct PDF text extraction failed: {e}")
 
-        # Regular image processing with EasyOCR
+            # 2. Try rendering PDF pages locally and OCRing them
+            try:
+                res = self._extract_pdf_pages_local(image_bytes)
+                if res and len(res.strip()) > 50:
+                    return res
+            except Exception as e:
+                logger.warning(f"Local PDF render + OCR failed: {e}")
+        else:
+            # Regular Image — try local EasyOCR
+            try:
+                res = self._extract_image_local(image_bytes)
+                if res and len(res.strip()) > 5:
+                    return res
+            except Exception as e:
+                logger.warning(f"Local Image EasyOCR failed: {e}")
+
+        # 3. Fallback: Gemini OCR API
+        logger.info("Using Gemini OCR fallback...")
+        gemini_text = self._extract_text_via_gemini(image_bytes)
+        if gemini_text:
+            return gemini_text
+
+        if is_pdf:
+            return "PDF could not be processed. Please upload images of each page."
+        return "Unable to analyze image. Please describe what you see."
+
+    def _extract_image_local(self, image_bytes: bytes) -> str:
+        """Process image locally with EasyOCR"""
         reader = _get_reader()
         try:
             from PIL import Image, ImageEnhance
@@ -238,7 +273,7 @@ class OCREngine:
             img.save(buf, format='JPEG', quality=95)
             image_bytes = buf.getvalue()
         except Exception as e:
-            logger.warning(f"Image preprocessing failed, using raw: {e}")
+            logger.warning(f"Local image preprocessing failed: {e}")
 
         with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
             tmp.write(image_bytes)
@@ -248,67 +283,129 @@ class OCREngine:
             results = reader.readtext(tmp_path, detail=0, paragraph=True)
             return "\n".join(results)
         finally:
-            os.unlink(tmp_path)
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
     def _extract_text_from_pdf(self, pdf_bytes: bytes) -> str:
         """Extract text from PDF using PyMuPDF"""
-        try:
-            import fitz
-            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-            all_text = []
-            for page in doc:
-                text = page.get_text()
-                if text.strip():
-                    all_text.append(text)
-            doc.close()
-            combined = "\n".join(all_text)
-            if len(combined.strip()) > 50:
-                logger.info(f"PDF text extracted via PyMuPDF: {len(combined)} chars from {len(all_text)} pages")
-                return combined
-        except Exception as e:
-            logger.warning(f"PyMuPDF extraction failed: {e}")
+        import fitz
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        all_text = []
+        for page in doc:
+            text = page.get_text()
+            if text.strip():
+                all_text.append(text)
+        doc.close()
+        combined = "\n".join(all_text)
+        if len(combined.strip()) > 50:
+            logger.info(f"PDF text extracted via PyMuPDF: {len(combined)} chars from {len(all_text)} pages")
+            return combined
+        return ""
 
-        # Fallback: render pages to images and OCR
-        try:
-            import fitz
-            from PIL import Image, ImageEnhance
-            import io
-            reader = _get_reader()
-            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-            all_text = []
-            page_count = min(len(doc), 25)
-            for i in range(page_count):
-                page = doc[i]
-                # Render at high DPI for better OCR
-                pix = page.get_pixmap(dpi=300)
-                img_bytes = pix.tobytes("png")
-                # Preprocess: enhance contrast and sharpness
-                img = Image.open(io.BytesIO(img_bytes))
-                if img.mode != 'RGB':
-                    img = img.convert('RGB')
-                img = ImageEnhance.Contrast(img).enhance(1.5)
-                img = ImageEnhance.Sharpness(img).enhance(2.0)
-                # Save to temp file for EasyOCR
-                tmp_path = os.path.join(tempfile.gettempdir(), f"ocr_page_{i}_{os.getpid()}.jpg")
-                img.save(tmp_path, format='JPEG', quality=95)
+    def _extract_pdf_pages_local(self, pdf_bytes: bytes) -> str:
+        """Render pages locally and OCR with EasyOCR"""
+        import fitz
+        from PIL import Image, ImageEnhance
+        import io
+        reader = _get_reader()
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        all_text = []
+        page_count = min(len(doc), 25)
+        for i in range(page_count):
+            page = doc[i]
+            # Render at high DPI for better OCR
+            pix = page.get_pixmap(dpi=300)
+            img_bytes = pix.tobytes("png")
+            # Preprocess: enhance contrast and sharpness
+            img = Image.open(io.BytesIO(img_bytes))
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            img = ImageEnhance.Contrast(img).enhance(1.5)
+            img = ImageEnhance.Sharpness(img).enhance(2.0)
+            # Save to temp file for EasyOCR
+            tmp_path = os.path.join(tempfile.gettempdir(), f"ocr_page_{i}_{os.getpid()}.jpg")
+            img.save(tmp_path, format='JPEG', quality=95)
+            try:
+                results = reader.readtext(tmp_path, detail=0, paragraph=True)
+                all_text.extend(results)
+                logger.info(f"Page {i+1}/{page_count}: {len(results)} text blocks")
+            finally:
                 try:
-                    results = reader.readtext(tmp_path, detail=0, paragraph=True)
-                    all_text.extend(results)
-                    logger.info(f"Page {i+1}/{page_count}: {len(results)} text blocks")
-                finally:
-                    try:
-                        os.unlink(tmp_path)
-                    except OSError:
-                        pass
-            doc.close()
-            combined = "\n".join(all_text)
-            logger.info(f"PDF OCR rendered {page_count} pages, got {len(all_text)} text blocks, {len(combined)} chars")
-            if len(combined.strip()) > 20:
-                return combined
-        except Exception as e:
-            logger.error(f"PDF fallback OCR failed: {e}", exc_info=True)
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+        doc.close()
+        combined = "\n".join(all_text)
+        logger.info(f"PDF OCR rendered {page_count} pages, got {len(all_text)} text blocks, {len(combined)} chars")
+        return combined
 
-        return "PDF could not be processed. Please upload images of each page."
+    def _extract_text_via_gemini(self, image_bytes: bytes) -> str:
+        """Send image or PDF to Gemini API to extract text"""
+        import base64
+        import httpx
+        import json
+
+        api_key = os.environ.get("GOOGLE_AI_API_KEY", "").strip()
+        if not api_key:
+            logger.warning("Gemini OCR requested but GOOGLE_AI_API_KEY is missing.")
+            return ""
+
+        is_pdf = image_bytes[:5] == b'%PDF-'
+        mime_type = "application/pdf" if is_pdf else "image/jpeg"
+        encoded_data = base64.b64encode(image_bytes).decode("utf-8")
+
+        prompt = (
+            "This is a medical lab report or document. Extract all the text from this document word-for-word. "
+            "Preserve the structure, table columns, test names, values, units, and reference ranges. "
+            "Do not summarize, do not add comments, just return the exact extracted text."
+        )
+
+        payload = {
+            "contents": [{
+                "role": "user",
+                "parts": [
+                    {
+                        "inlineData": {
+                            "mimeType": mime_type,
+                            "data": encoded_data
+                        }
+                    },
+                    {
+                        "text": prompt
+                    }
+                ]
+            }],
+            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 2048},
+        }
+
+        model_candidates = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b"]
+        last_err = None
+
+        with httpx.Client(timeout=120) as client:
+            for model in model_candidates:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+                try:
+                    resp = client.post(url, json=payload)
+                    if resp.status_code == 200:
+                        res_json = resp.json()
+                        parts = res_json.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+                        text_result = "".join(part.get("text", "") for part in parts).strip()
+                        if text_result:
+                            logger.info(f"Gemini OCR ({model}) successfully extracted {len(text_result)} characters")
+                            return text_result
+                    else:
+                        logger.warning(f"Gemini OCR model {model} failed with status {resp.status_code}: {resp.text}")
+                except Exception as e:
+                    logger.warning(f"Error calling Gemini OCR model {model}: {e}")
+                    last_err = e
+                    continue
+
+        if last_err:
+            logger.error(f"Gemini OCR failed: {last_err}")
+        return ""
+
 
     def parse_lab_report(self, text: str) -> List[Dict]:
         """Parse raw text into structured lab results.

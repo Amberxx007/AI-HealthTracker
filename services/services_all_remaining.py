@@ -337,90 +337,187 @@ class VisionAnalyzer:
     async def analyze_medical_image(self, image_bytes: bytes, 
                                       body_region: str = None, 
                                       image_type: str = None) -> dict:
-        """Analyze medical image with intelligent type detection"""
+        """Analyze medical image with intelligent type detection, trying local model first and falling back to Gemini"""
         try:
             image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
             props = self._analyze_image_properties(image)
             classified_type = self._classify_image_type(props, image_type)
-            
+        except Exception as e:
+            logger.error(f"Image preprocessing failed: {e}")
+            props = {"width": 0, "height": 0, "is_grayscale": False, "is_xray_like": False, "is_document": False}
+            classified_type = image_type or "photo"
+
+        # 1. Try local BLIP image captioning model
+        try:
             if self.model is None or self.processor is None:
                 await self.initialize()
             
-            if self.model is None or self.processor is None:
+            if self.model is not None and self.processor is not None:
+                # Choose prompt based on detected type
+                if classified_type == "xray_scan":
+                    prompts = [
+                        "an x-ray image showing",
+                        "a medical radiograph of",
+                    ]
+                elif classified_type == "document_report":
+                    prompts = [
+                        "a medical document showing",
+                    ]
+                else:
+                    prompts = [
+                        "a medical photograph showing",
+                        "a clinical image of",
+                    ]
+
+                captions = []
+                
+                # Unconditional caption
+                inputs = self.processor(images=image, return_tensors="pt")
+                if torch.cuda.is_available():
+                    inputs = {k: v.cuda() for k, v in inputs.items()}
+                output = self.model.generate(**inputs, max_new_tokens=100)
+                base_caption = self.processor.decode(output[0], skip_special_tokens=True)
+                captions.append(base_caption)
+
+                # Conditional captions with medical prompts
+                for prompt in prompts:
+                    inputs2 = self.processor(images=image, text=prompt, return_tensors="pt")
+                    if torch.cuda.is_available():
+                        inputs2 = {k: v.cuda() for k, v in inputs2.items()}
+                    output2 = self.model.generate(**inputs2, max_new_tokens=100)
+                    cap = self.processor.decode(output2[0], skip_special_tokens=True)
+                    if cap and cap not in captions:
+                        captions.append(cap)
+
+                # Build rich description with context
+                region_text = f" of the {body_region.replace('_',' ')} region" if body_region else ""
+                type_label = {
+                    "xray_scan": "X-ray/radiological scan",
+                    "document_report": "medical document/report",
+                    "clinical_photo": "clinical photograph",
+                }.get(classified_type, "medical image")
+
+                description = (
+                    f"[Image Type: {type_label}{region_text}] "
+                    f"Visual analysis: {'. '.join(captions)}. "
+                    f"Image properties: {'grayscale' if props.get('is_grayscale') else 'color'}, "
+                    f"resolution {props.get('width')}x{props.get('height')}."
+                )
+
+                logger.info(f"Local vision analysis ({classified_type}): {description[:120]}")
                 return {
-                    "description": "Image received. Vision model not available — please describe what you see.",
+                    "description": description,
                     "image_type": classified_type,
                     "properties": props,
-                    "confidence": 0.3
+                    "captions": captions,
+                    "confidence": 0.8
                 }
+        except Exception as local_err:
+            logger.warning(f"Local image analysis failed: {local_err}. Falling back to Gemini API.")
 
-            # Choose prompt based on detected type
-            if classified_type == "xray_scan":
-                prompts = [
-                    "an x-ray image showing",
-                    "a medical radiograph of",
+        # 2. Fallback to Gemini Vision API
+        logger.info("Using Gemini Vision API fallback...")
+        gemini_res = await self._analyze_with_gemini(image_bytes, props, classified_type, body_region)
+        if gemini_res:
+            return gemini_res
+
+        # 3. Final default fallback if everything fails
+        region_text = f" of the {body_region.replace('_',' ')} region" if body_region else ""
+        type_label = {
+            "xray_scan": "X-ray/radiological scan",
+            "document_report": "medical document/report",
+            "clinical_photo": "clinical photograph",
+        }.get(classified_type, "medical image")
+        return {
+            "description": f"[Image Type: {type_label}{region_text}] Image received. Vision service is currently offline — please describe what you see in detail.",
+            "image_type": classified_type,
+            "properties": props,
+            "confidence": 0.2
+        }
+
+    async def _analyze_with_gemini(self, image_bytes: bytes, props: dict, classified_type: str, body_region: str = None) -> dict:
+        """Call Gemini API for vision analysis"""
+        import base64
+        import httpx
+        import json
+
+        api_key = os.getenv("GOOGLE_AI_API_KEY", "").strip()
+        if not api_key:
+            logger.warning("Gemini Vision fallback requested but GOOGLE_AI_API_KEY is missing.")
+            return None
+
+        # Build prompt
+        region_text = f" of the {body_region.replace('_',' ')} region" if body_region else ""
+        type_label = {
+            "xray_scan": "X-ray/radiological scan",
+            "document_report": "medical document/report",
+            "clinical_photo": "clinical photograph",
+        }.get(classified_type, "medical image")
+
+        prompt = (
+            f"Analyze this medical image ({type_label}{region_text}). "
+            "Provide a highly detailed, professional medical visual analysis describing what is visible in the image. "
+            "Identify and describe key structures, features, and visual characteristics. "
+            "Keep the analysis highly professional, detailed, objective, and clear."
+        )
+
+        encoded_data = base64.b64encode(image_bytes).decode("utf-8")
+
+        payload = {
+            "contents": [{
+                "role": "user",
+                "parts": [
+                    {
+                        "inlineData": {
+                            "mimeType": "image/jpeg",
+                            "data": encoded_data
+                        }
+                    },
+                    {
+                        "text": prompt
+                    }
                 ]
-            elif classified_type == "document_report":
-                prompts = [
-                    "a medical document showing",
-                ]
-            else:
-                prompts = [
-                    "a medical photograph showing",
-                    "a clinical image of",
-                ]
+            }],
+            "generationConfig": {"temperature": 0.4, "maxOutputTokens": 800},
+        }
 
-            captions = []
-            
-            # Unconditional caption
-            inputs = self.processor(images=image, return_tensors="pt")
-            if torch.cuda.is_available():
-                inputs = {k: v.cuda() for k, v in inputs.items()}
-            output = self.model.generate(**inputs, max_new_tokens=100)
-            base_caption = self.processor.decode(output[0], skip_special_tokens=True)
-            captions.append(base_caption)
+        model_candidates = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b"]
+        last_err = None
 
-            # Conditional captions with medical prompts
-            for prompt in prompts:
-                inputs2 = self.processor(images=image, text=prompt, return_tensors="pt")
-                if torch.cuda.is_available():
-                    inputs2 = {k: v.cuda() for k, v in inputs2.items()}
-                output2 = self.model.generate(**inputs2, max_new_tokens=100)
-                cap = self.processor.decode(output2[0], skip_special_tokens=True)
-                if cap and cap not in captions:
-                    captions.append(cap)
+        async with httpx.AsyncClient(timeout=120) as client:
+            for model in model_candidates:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+                try:
+                    resp = await client.post(url, json=payload)
+                    if resp.status_code == 200:
+                        res_json = resp.json()
+                        parts = res_json.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+                        text_result = "".join(part.get("text", "") for part in parts).strip()
+                        if text_result:
+                            description = (
+                                f"[Image Type: {type_label}{region_text}] "
+                                f"Visual analysis (Gemini): {text_result} "
+                                f"Image properties: {'grayscale' if props.get('is_grayscale') else 'color'}, "
+                                f"resolution {props.get('width')}x{props.get('height')}."
+                            )
+                            logger.info(f"Gemini Vision ({model}) successfully analyzed image")
+                            return {
+                                "description": description,
+                                "image_type": classified_type,
+                                "properties": props,
+                                "confidence": 0.95
+                            }
+                    else:
+                        logger.warning(f"Gemini Vision model {model} failed with status {resp.status_code}: {resp.text}")
+                except Exception as e:
+                    logger.warning(f"Error calling Gemini Vision model {model}: {e}")
+                    last_err = e
+                    continue
 
-            # Build rich description with context
-            region_text = f" of the {body_region.replace('_',' ')} region" if body_region else ""
-            type_label = {
-                "xray_scan": "X-ray/radiological scan",
-                "document_report": "medical document/report",
-                "clinical_photo": "clinical photograph",
-            }.get(classified_type, "medical image")
+        if last_err:
+            logger.error(f"Gemini Vision fallback failed: {last_err}")
+        return None
 
-            description = (
-                f"[Image Type: {type_label}{region_text}] "
-                f"Visual analysis: {'. '.join(captions)}. "
-                f"Image properties: {'grayscale' if props['is_grayscale'] else 'color'}, "
-                f"resolution {props['width']}x{props['height']}."
-            )
-
-            logger.info(f"Vision analysis ({classified_type}): {description[:120]}")
-            return {
-                "description": description,
-                "image_type": classified_type,
-                "properties": props,
-                "captions": captions,
-                "confidence": 0.8
-            }
-            
-        except Exception as e:
-            logger.error(f"Image analysis error: {e}")
-            return {
-                "description": "Unable to analyze image. Please describe what you see.",
-                "image_type": "unknown",
-                "confidence": 0.0
-            }
     
     def check_health(self) -> bool:
         return True
