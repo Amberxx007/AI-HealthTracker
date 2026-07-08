@@ -753,7 +753,7 @@ Provide immediate guidance:
 
 class CloudModelEngine:
     """
-    Routes to cloud LLM providers (OpenAI, Gemini, Anthropic)
+    Routes to cloud LLM providers (OpenAI, Gemini, Anthropic, Groq)
     using the same medical system prompt as the core engine.
     """
 
@@ -761,6 +761,7 @@ class CloudModelEngine:
         "openai": {"env_key": "OPENAI_API_KEY", "label": "GPT-4o"},
         "gemini": {"env_key": "GOOGLE_AI_API_KEY", "label": "Gemini"},
         "anthropic": {"env_key": "ANTHROPIC_API_KEY", "label": "Claude"},
+        "groq": {"env_key": "GROQ_API_KEY", "label": "Groq"},
     }
 
     def __init__(self):
@@ -825,6 +826,9 @@ class CloudModelEngine:
                     yield token
             elif provider == "anthropic":
                 async for token in self._stream_anthropic(api_key, messages, temperature, max_tokens):
+                    yield token
+            elif provider == "groq":
+                async for token in self._stream_groq(api_key, messages, temperature, max_tokens):
                     yield token
         except Exception as e:
             logger.error(f"Cloud model error ({provider}): {e}", exc_info=True)
@@ -929,6 +933,34 @@ class CloudModelEngine:
                             text = chunk.get("delta", {}).get("text", "")
                             if text:
                                 yield text
+                    except (json.JSONDecodeError, KeyError, IndexError):
+                        continue
+
+    async def _stream_groq(self, api_key, messages, temperature, max_tokens):
+        """Stream from Groq using OpenAI-compatible API."""
+        import httpx
+        url = "https://api.groq.com/openai/v1/chat/completions"
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        payload = {
+            "model": "mixtral-8x7b-32768",  # Groq's fast model
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True,
+        }
+        async with httpx.AsyncClient(timeout=120) as client:
+            async with client.stream("POST", url, json=payload, headers=headers) as resp:
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    data = line[6:]
+                    if data.strip() == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data)
+                        token = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                        if token:
+                            yield token
                     except (json.JSONDecodeError, KeyError, IndexError):
                         continue
 

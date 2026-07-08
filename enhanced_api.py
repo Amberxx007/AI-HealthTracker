@@ -88,9 +88,9 @@ async def _collect_stream_text(stream):
 
 def _available_cloud_provider() -> str:
     preferred = os.getenv("DEFAULT_MODEL_PROVIDER", "").strip().lower()
-    if preferred in {"openai", "gemini", "anthropic"} and cloud_engine.is_available(preferred):
+    if preferred in {"openai", "gemini", "anthropic", "groq"} and cloud_engine.is_available(preferred):
         return preferred
-    for provider in ("openai", "gemini", "anthropic"):
+    for provider in ("openai", "gemini", "anthropic", "groq"):
         if cloud_engine.is_available(provider):
             return provider
     return "core"
@@ -98,7 +98,7 @@ def _available_cloud_provider() -> str:
 
 def _resolve_model_provider(requested_provider: Optional[str]) -> str:
     provider = (requested_provider or "").strip().lower()
-    if provider in {"openai", "gemini", "anthropic"}:
+    if provider in {"openai", "gemini", "anthropic", "groq"}:
         if cloud_engine.is_available(provider):
             return provider
         return _available_cloud_provider()
@@ -107,7 +107,7 @@ def _resolve_model_provider(requested_provider: Optional[str]) -> str:
     default_provider = os.getenv("DEFAULT_MODEL_PROVIDER", "").strip().lower()
     if default_provider == "core":
         return "core" if llm_engine.check_health() else _available_cloud_provider()
-    if default_provider in {"openai", "gemini", "anthropic"} and cloud_engine.is_available(default_provider):
+    if default_provider in {"openai", "gemini", "anthropic", "groq"} and cloud_engine.is_available(default_provider):
         return default_provider
     return _available_cloud_provider()
 
@@ -677,7 +677,7 @@ async def chat_stream(chat_request: ChatRequest, request: Request):
 
             # Route to cloud or core model (resolve to available provider)
             provider = _resolve_model_provider(getattr(chat_request, 'model_provider', None))
-            if provider != "core" and provider in ("openai", "gemini", "anthropic"):
+            if provider != "core" and provider in ("openai", "gemini", "anthropic", "groq"):
                 # Cloud model streaming
                 async for token in cloud_engine.generate_response_stream(
                     provider=provider,
