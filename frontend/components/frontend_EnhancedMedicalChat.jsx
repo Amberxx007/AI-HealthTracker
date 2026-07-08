@@ -39,7 +39,7 @@ const registerOrLogin = async (patientId) => {
   if (existingToken) return existingToken;  // Already have token
   
   try {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || window.location.origin}/api/auth/quick-register`, {
+    const res = await fetch(`https://ai-healthtracker-production.up.railway.app/api/auth/quick-register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ patient_id: patientId }),
